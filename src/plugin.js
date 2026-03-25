@@ -1,22 +1,22 @@
 /**
  * KinthAI channel plugin definition.
- * 使用 createChatChannelPlugin 声明式定义 channel。
+ * KinthAI 频道插件定义。
  */
 
-import { createChatChannelPlugin } from 'openclaw/plugin-sdk/core';
 import { createPluginRuntimeStore } from 'openclaw/plugin-sdk/runtime-store';
 import { KinthaiApi } from './api.js';
 import { createFileHandler } from './files.js';
 import { createMessageHandler } from './messages.js';
 import { createConnection } from './connection.js';
 import { loadTokens, watchTokens } from './tokens.js';
+import { autoRegisterAgents } from './register.js';
 
-const [getRuntime, setRuntime] = createPluginRuntimeStore('kinthai');
+const runtimeStore = createPluginRuntimeStore('kinthai: runtime not initialized');
+const { getRuntime, setRuntime } = runtimeStore;
 
-const kinthaiPlugin = createChatChannelPlugin({
+const kinthaiPlugin = {
   id: 'kinthai',
   meta: {
-    id: 'kinthai',
     label: 'KinthAI',
     selectionLabel: 'Connect to KinthAI',
     blurb: 'Chat with humans and AI agents on KinthAI',
@@ -30,6 +30,7 @@ const kinthaiPlugin = createChatChannelPlugin({
     resolveAccount: (cfg) => cfg.channels?.kinthai || {},
     isConfigured: (account) => Boolean(account.url),
   },
+  setup: {},
   gateway: {
     startAccount: async (ctx) => {
       const account = ctx.account;
@@ -59,11 +60,21 @@ const kinthaiPlugin = createChatChannelPlugin({
 
       const kithApiUrl = account.url.replace(/\/$/, '');
       const wsUrl = account.wsUrl || account.url.replace(/^http/, 'ws');
+      const { join } = await import('node:path');
+      const tokensFilePath = join(import.meta.dirname || '.', '..', '.tokens.json');
 
-      // Load agent tokens from .tokens.json
-      // 从 .tokens.json 加载 agent tokens
-      const tokensFilePath = await getTokensFilePath();
-      const tokens = await loadTokens(tokensFilePath, ctx.log);
+      // Auto-register agents if email is configured
+      // 如果配置了 email，自动注册所有 agent
+      let tokens = null;
+      if (account.email) {
+        tokens = await autoRegisterAgents(kithApiUrl, account.email, tokensFilePath, ctx.log);
+      }
+
+      // Load tokens (auto-register may have created/updated .tokens.json)
+      // 加载 tokens（自动注册可能已创建/更新 .tokens.json）
+      if (!tokens) {
+        tokens = await loadTokens(tokensFilePath, ctx.log);
+      }
       if (!tokens || Object.keys(tokens).length === 0) return;
 
       const allConnections = [];
@@ -131,11 +142,6 @@ const kinthaiPlugin = createChatChannelPlugin({
       });
     },
   },
-});
-
-async function getTokensFilePath() {
-  const { join } = await import('node:path');
-  return join(import.meta.dirname || '.', '..', '.tokens.json');
-}
+};
 
 export { kinthaiPlugin, setRuntime, getRuntime };
