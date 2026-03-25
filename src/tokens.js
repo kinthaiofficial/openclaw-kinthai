@@ -46,7 +46,7 @@ export async function loadTokens(tokensFilePath, log) {
 export function watchTokens(tokensFilePath, existingTokens, startAgentFn, log) {
   const knownTokens = new Set(Object.keys(existingTokens));
 
-  watchFile(tokensFilePath, { interval: 3000 }, async () => {
+  watchFile(tokensFilePath, { interval: 10000 }, async () => {
     try {
       const newData = JSON.parse(await readFile(tokensFilePath, 'utf8'));
       for (const [label, token] of Object.entries(newData)) {

@@ -22,6 +22,8 @@ import { homedir } from 'node:os';
  * @returns {object|null} tokens map, or null on failure
  */
 export async function autoRegisterAgents(kinthaiUrl, email, tokensFilePath, log) {
+  log?.info?.('[KK-REG] Auto-registration scan starting...');
+
   // Read machine ID from OpenClaw identity
   // 从 OpenClaw identity 读取机器 ID
   const openclawDir = await findOpenClawDir();

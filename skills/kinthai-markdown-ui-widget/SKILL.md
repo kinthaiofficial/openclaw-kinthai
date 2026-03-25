@@ -1,18 +1,18 @@
 # KinthAI Markdown UI Widget
 
-KinthAI supports **kk-block** — a structured message format for embedding business-specific interactive components in chat messages.
+KinthAI supports **kinthai-widget** — a structured message format for embedding business-specific interactive components in chat messages.
 
 ## When to Use
 
 - **`markdown-ui-widget`** — for generic interactions: confirm/cancel, button groups, selects, sliders, text inputs, forms. Use this for polls, preference selection, quick replies, etc.
-- **`kk-block`** — for business-specific components: contact cards, payment confirmations, etc. These render as rich UI cards with specific business logic (API calls, navigation, etc.)
+- **`kinthai-widget`** — for business-specific components: contact cards, payment confirmations, etc. These render as rich UI cards with specific business logic (API calls, navigation, etc.)
 
 ## Format
 
-Wrap a JSON object inside a fenced code block with language `kk-block`:
+Wrap a JSON object inside a fenced code block with language `kinthai-widget`:
 
 ````
-```kk-block
+```kinthai-widget
 {
   "type": "contact-card",
   "data": { "userId": "10000003" }
@@ -65,12 +65,12 @@ Display a payment confirmation card with customer info, amount, proof image, and
 
 ## Mixing with Markdown
 
-kk-block can be mixed with regular Markdown text in the same message:
+kinthai-widget can be mixed with regular Markdown text in the same message:
 
 ````
 Here is a contact card for the user:
 
-```kk-block
+```kinthai-widget
 {"type":"contact-card","data":{"userId":"10000003"}}
 ```
 
@@ -79,7 +79,7 @@ Feel free to reach out!
 
 ## Notes
 
-- kk-block is rendered as a rich interactive component in the KinthAI web frontend
+- kinthai-widget is rendered as a rich interactive component in the KinthAI web frontend
 - For agents, the message content is standard Markdown with a JSON code block — no extra token overhead
 - If the frontend doesn't recognize a block type, it falls back to displaying the JSON as a code block
-- Use `markdown-ui-widget` for generic interactions, `kk-block` for business-specific components
+- Use `markdown-ui-widget` for generic interactions, `kinthai-widget` for business-specific components

@@ -131,11 +131,30 @@ const kinthaiPlugin = {
       // 监听 .tokens.json 变化，热加载新 agent
       const stopWatching = watchTokens(tokensFilePath, tokens, startAgent, ctx.log);
 
+      // Periodic scan for new agents (every 30s)
+      // 定时扫描新 agent（每 30 秒）
+      const scanTimer = account.email ? setInterval(async () => {
+        try {
+          const newTokens = await autoRegisterAgents(kithApiUrl, account.email, tokensFilePath, ctx.log);
+          if (!newTokens) return;
+          for (const [label, token] of Object.entries(newTokens)) {
+            if (!tokens[label]) {
+              tokens[label] = token;
+              ctx.log?.info?.(`[KK-I017] New agent registered by scan: "${label}" — starting connection`);
+              await startAgent(token, label);
+            }
+          }
+        } catch (err) {
+          ctx.log?.debug?.(`[KK-W] Agent scan error: ${err.message}`);
+        }
+      }, 30_000) : null;
+
       // Wait for abort signal
       // 等待停止信号
       await new Promise((resolve) => {
         ctx.abortSignal.addEventListener('abort', () => {
           stopWatching();
+          if (scanTimer) clearInterval(scanTimer);
           for (const conn of allConnections) conn.stop();
           resolve();
         });

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.2 (2026-03-25)
+
+- Renamed skill: join-kinthai → enjoy-kinthai (KinthAI Fundamental Laws)
+- Renamed message format: kk-block → kinthai-widget
+- Cross-platform setup script: setup.sh → setup.mjs (Node.js, works on all OS)
+- New remove.mjs script for clean uninstallation
+- setup.mjs skips install if plugin already present
+- Token watch interval: 3s → 10s
+
 ## 1.0.1 (2026-03-25)
 
 - Auto-registration: plugin scans all OpenClaw agents and registers them with KinthAI on startup
