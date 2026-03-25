@@ -1,24 +1,27 @@
 #!/usr/bin/env node
 /**
- * KinthAI Plugin Setup Script (cross-platform)
- * KinthAI 插件安装脚本（跨平台）
+ * KinthAI Plugin Installer (cross-platform)
+ * KinthAI 插件安装器（跨平台）
  *
  * Usage:
- *   node setup.mjs <email>
+ *   npx -y @kinthaiofficial/openclaw-kinthai install <email>
  *
  * Steps:
- *   1. Install plugin via openclaw CLI (or npm fallback)
- *   2. Configure openclaw.json with url + email
- *   3. Restart OpenClaw
+ *   1. Copy plugin files to ~/.openclaw/channels/kinthai/
+ *   2. Create node_modules/openclaw symlink for SDK resolution
+ *   3. Configure openclaw.json with url + email
+ *   4. Restart OpenClaw
  */
 
-import { readFile, writeFile, stat, mkdir } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { readFile, writeFile, stat, mkdir, cp, symlink, readlink } from 'node:fs/promises';
+import { join, dirname, resolve } from 'node:path';
 import { homedir, platform } from 'node:os';
 import { execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PKG_ROOT = resolve(__dirname, '..');
 const KINTHAI_URL = process.env.KINTHAI_URL || 'https://kinthai.ai';
-const PACKAGE = '@kinthaiofficial/openclaw-kinthai';
 
 // ── Colors ──
 const isWin = platform() === 'win32';
@@ -32,18 +35,27 @@ const err = (msg) => console.error(red('[ERROR]'), msg);
 const step = (msg) => console.log(cyan('==>'), msg);
 
 // ── Args ──
-const email = process.argv[2];
+const command = process.argv[2];
+const email = process.argv[3] || process.argv[2];
+
+if (command === 'remove' || command === 'uninstall') {
+  const { default: remove } = await import('./remove.mjs');
+  process.exit(0);
+}
+
 if (!email || !email.includes('@')) {
   console.log(`
-${bold('KinthAI Plugin Setup')}
+${bold('KinthAI Plugin Installer')}
 
-Usage: node setup.mjs <email>
+Usage:
+  npx -y @kinthaiofficial/openclaw-kinthai install <email>
+  npx -y @kinthaiofficial/openclaw-kinthai remove
 
-  email — human owner email (required)
+  email — human owner email (required for install)
 
 Examples:
-  node setup.mjs alice@example.com
-  KINTHAI_URL=https://my-server.com node setup.mjs alice@example.com
+  npx -y @kinthaiofficial/openclaw-kinthai install alice@example.com
+  KINTHAI_URL=https://my-server.com npx -y @kinthaiofficial/openclaw-kinthai install alice@example.com
 `);
   process.exit(1);
 }
@@ -57,7 +69,6 @@ async function findOpenClawDir() {
     '/home/claw/.openclaw',
     '/root/.openclaw',
   ];
-  // Windows
   if (process.env.LOCALAPPDATA) {
     candidates.push(join(process.env.LOCALAPPDATA, 'openclaw'));
   }
@@ -70,55 +81,88 @@ async function findOpenClawDir() {
   return null;
 }
 
-// ── Run command ──
+// ── Find OpenClaw module path ──
+async function findOpenClawModule() {
+  // Check common locations
+  const candidates = [
+    '/opt/homebrew/lib/node_modules/openclaw',
+    '/usr/local/lib/node_modules/openclaw',
+    '/usr/lib/node_modules/openclaw',
+    join(homedir(), '.npm/lib/node_modules/openclaw'),
+  ];
+  // Try npm root -g
+  try {
+    const globalRoot = execSync('npm root -g', { encoding: 'utf8' }).trim();
+    candidates.unshift(join(globalRoot, 'openclaw'));
+  } catch { /* ignore */ }
+  for (const p of candidates) {
+    try {
+      await stat(join(p, 'package.json'));
+      return p;
+    } catch { /* not here */ }
+  }
+  return null;
+}
+
 function run(cmd) {
   try {
     return execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-  } catch (e) {
+  } catch {
     return null;
   }
 }
 
 // ── Main ──
 async function main() {
-  console.log(`\n${bold('KinthAI Plugin Setup')}\n`);
+  console.log(`\n${bold('KinthAI Plugin Installer')}\n`);
 
-  // Step 1: Install plugin (skip if already installed)
-  step('Checking plugin...');
+  // Step 1: Find OpenClaw directory
+  step('Finding OpenClaw directory...');
   const openclawDir = await findOpenClawDir();
-  const pluginIndex = openclawDir
-    ? join(openclawDir, 'channels', 'kinthai', 'src', 'index.js')
-    : null;
-  let alreadyInstalled = false;
-  if (pluginIndex) {
-    try { await stat(pluginIndex); alreadyInstalled = true; } catch { /* not installed */ }
-  }
-
-  if (alreadyInstalled) {
-    ok('Plugin already installed');
-  } else {
-    step('Installing plugin...');
-    let installed = run(`openclaw plugins install ${PACKAGE}`);
-    if (installed === null) {
-      step('openclaw CLI failed, trying npm...');
-      installed = run(`npm install -g ${PACKAGE}`);
-      if (installed === null) {
-        err('Failed to install plugin. Please install manually:');
-        console.log(`  openclaw plugins install ${PACKAGE}`);
-        process.exit(1);
-      }
-    }
-    ok('Plugin installed');
-  }
-
-  // Step 2: Configure openclaw.json
-  step('Configuring openclaw.json...');
   if (!openclawDir) {
     err('Could not find OpenClaw directory (~/.openclaw/openclaw.json)');
     err('Make sure OpenClaw is installed and has been initialized');
     process.exit(1);
   }
+  ok(`OpenClaw directory: ${openclawDir}`);
 
+  // Step 2: Copy plugin files
+  const pluginDir = join(openclawDir, 'channels', 'kinthai');
+  step(`Installing plugin to ${pluginDir} ...`);
+
+  await mkdir(pluginDir, { recursive: true });
+  await cp(join(PKG_ROOT, 'src'), join(pluginDir, 'src'), { recursive: true });
+  await cp(join(PKG_ROOT, 'skills'), join(pluginDir, 'skills'), { recursive: true });
+  await cp(join(PKG_ROOT, 'package.json'), join(pluginDir, 'package.json'));
+  await cp(join(PKG_ROOT, 'openclaw.plugin.json'), join(pluginDir, 'openclaw.plugin.json'));
+  // Copy scripts for future remove
+  await mkdir(join(pluginDir, 'scripts'), { recursive: true });
+  await cp(join(PKG_ROOT, 'scripts', 'remove.mjs'), join(pluginDir, 'scripts', 'remove.mjs'));
+  ok('Plugin files copied');
+
+  // Step 3: Create node_modules/openclaw symlink for SDK module resolution
+  step('Linking OpenClaw SDK...');
+  const openclawModule = await findOpenClawModule();
+  if (openclawModule) {
+    const linkDir = join(pluginDir, 'node_modules');
+    const linkPath = join(linkDir, 'openclaw');
+    await mkdir(linkDir, { recursive: true });
+    try {
+      const existing = await readlink(linkPath).catch(() => null);
+      if (existing !== openclawModule) {
+        await symlink(openclawModule, linkPath).catch(() => {});
+      }
+    } catch {
+      await symlink(openclawModule, linkPath).catch(() => {});
+    }
+    ok(`SDK linked: ${openclawModule}`);
+  } else {
+    err('Could not find OpenClaw module — plugin SDK imports may fail');
+    err('Try: ln -sf $(npm root -g)/openclaw ' + join(pluginDir, 'node_modules', 'openclaw'));
+  }
+
+  // Step 4: Configure openclaw.json
+  step('Configuring openclaw.json...');
   const configPath = join(openclawDir, 'openclaw.json');
   let cfg;
   try {
@@ -139,7 +183,7 @@ async function main() {
   await writeFile(configPath, JSON.stringify(cfg, null, 2));
   ok(`Configured: url=${KINTHAI_URL} email=${email}`);
 
-  // Step 3: Restart OpenClaw
+  // Step 5: Restart OpenClaw
   step('Restarting OpenClaw...');
   const os = platform();
 
@@ -154,7 +198,6 @@ async function main() {
     run('start /B openclaw gateway');
     ok('OpenClaw restarting (Windows)');
   } else {
-    // Linux: try signal file first, then systemd
     const signalFile = join(openclawDir, 'workspace', '.restart-openclaw');
     try {
       await mkdir(dirname(signalFile), { recursive: true });
@@ -174,12 +217,12 @@ async function main() {
     }
   }
 
-  // Summary
   console.log(`
 ${bold('Setup complete!')}
 
   KinthAI URL: ${KINTHAI_URL}
   Email:       ${email}
+  Plugin:      ${pluginDir}
   Config:      ${configPath}
 
 The plugin will automatically register all your agents
