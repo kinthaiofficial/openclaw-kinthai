@@ -7,10 +7,12 @@
  */
 
 import { readFile, writeFile, mkdir, readdir, unlink, rename, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 
-const pluginDir = join(import.meta.dirname || '.', '..');
+const __dirname = import.meta.dirname ?? path.dirname(fileURLToPath(import.meta.url));
+const pluginDir = path.resolve(__dirname, '..');
 
 export async function handleAdminCommand(event, api, state, log) {
   const { command_id, command_type, payload } = event;
@@ -43,7 +45,7 @@ async function executeCheck(command_id, api, state, log) {
 
   let disk_version = 'unknown';
   try {
-    const pkg = JSON.parse(await readFile(join(pluginDir, 'package.json'), 'utf8'));
+    const pkg = JSON.parse(await readFile(path.join(pluginDir, 'package.json'), 'utf8'));
     disk_version = pkg.version || 'unknown';
   } catch { /* ignore */ }
 
@@ -64,13 +66,13 @@ async function executeCheck(command_id, api, state, log) {
     const manifestSet = new Set(manifestFiles);
     for (const f of manifestFiles) {
       try {
-        await readFile(join(pluginDir, 'src', f));
+        await readFile(path.join(pluginDir, 'src', f));
       } catch {
         missing_files.push(f);
       }
     }
     try {
-      const dirEntries = await readdir(join(pluginDir, 'src'));
+      const dirEntries = await readdir(path.join(pluginDir, 'src'));
       for (const entry of dirEntries) {
         if (entry.startsWith('.')) continue;
         if (!manifestSet.has(entry) && entry.endsWith('.js')) {
@@ -105,8 +107,8 @@ async function executeUpgrade(command_id, payload, api, state, log) {
     return;
   }
 
-  const srcDir = join(pluginDir, 'src');
-  const tmpDir = join(pluginDir, '.upgrade-tmp');
+  const srcDir = path.join(pluginDir, 'src');
+  const tmpDir = path.join(pluginDir, '.upgrade-tmp');
   const baseUrl = api.baseUrl;
 
   try {
@@ -120,7 +122,7 @@ async function executeUpgrade(command_id, payload, api, state, log) {
         throw new Error(`Failed to download ${fileName}: HTTP ${res.status}`);
       }
       const content = await res.text();
-      await writeFile(join(tmpDir, fileName), content, 'utf8');
+      await writeFile(path.join(tmpDir, fileName), content, 'utf8');
     }
 
     // Remove old source files (never touch .tokens.json or hidden files)
@@ -129,20 +131,20 @@ async function executeUpgrade(command_id, payload, api, state, log) {
     for (const entry of oldEntries) {
       if (entry.startsWith('.')) continue;
       try {
-        await unlink(join(srcDir, entry));
+        await unlink(path.join(srcDir, entry));
       } catch { /* skip */ }
     }
 
     const newEntries = await readdir(tmpDir);
     for (const entry of newEntries) {
-      await rename(join(tmpDir, entry), join(srcDir, entry));
+      await rename(path.join(tmpDir, entry), path.join(srcDir, entry));
     }
 
     await rm(tmpDir, { recursive: true, force: true });
 
     let newVersion = 'unknown';
     try {
-      const newPkg = JSON.parse(await readFile(join(pluginDir, 'package.json'), 'utf8'));
+      const newPkg = JSON.parse(await readFile(path.join(pluginDir, 'package.json'), 'utf8'));
       newVersion = newPkg.version || 'unknown';
     } catch { /* ignore */ }
 
@@ -187,7 +189,7 @@ async function reportResult(api, command_id, status, result) {
 }
 
 async function triggerRestart(log) {
-  const restartFile = join(homedir(), '.openclaw/workspace/.restart-openclaw');
+  const restartFile = path.join(homedir(), '.openclaw/workspace/.restart-openclaw');
   try {
     await writeFile(restartFile, `restart-requested-${Date.now()}`);
     log?.info?.('[KK-UPD] Restart signal written');

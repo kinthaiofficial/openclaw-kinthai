@@ -23,7 +23,8 @@ import { defineChannelPluginEntry } from 'openclaw/plugin-sdk/core';
 import { kinthaiPlugin, setRuntime } from './plugin.js';
 import { lastModelInfo } from './messages.js';
 import { readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 
 // Prevent concurrent auto-registration for the same agentId
 // 防止同一 agentId 并发自动注册
@@ -37,7 +38,8 @@ export default defineChannelPluginEntry({
   setRuntime,
   registerFull(api) {
     const log = api.logger || console;
-    const tokensFilePath = join(import.meta.dirname || '.', '..', '.tokens.json');
+    const __dirname = import.meta.dirname ?? path.dirname(fileURLToPath(import.meta.url));
+    const tokensFilePath = path.join(__dirname, '..', '.tokens.json');
 
     // Capture LLM model info + auto-register new agents
     // 捕获 LLM 模型信息 + 自动注册新 agent

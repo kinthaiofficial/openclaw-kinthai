@@ -4,12 +4,17 @@
  */
 
 import { createPluginRuntimeStore } from 'openclaw/plugin-sdk/runtime-store';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { KinthaiApi } from './api.js';
 import { createFileHandler } from './files.js';
 import { createMessageHandler } from './messages.js';
 import { createConnection } from './connection.js';
 import { loadTokens, watchTokens } from './tokens.js';
 import { autoRegisterAgents } from './register.js';
+
+const __dirname = import.meta.dirname ?? path.dirname(fileURLToPath(import.meta.url));
+const PLUGIN_ROOT = path.resolve(__dirname, '..');
 
 const runtimeStore = createPluginRuntimeStore('kinthai: runtime not initialized');
 const { getRuntime, setRuntime } = runtimeStore;
@@ -50,9 +55,7 @@ const kinthaiPlugin = {
       let pluginVersion = '0.0.0';
       try {
         const { readFile } = await import('node:fs/promises');
-        const { join } = await import('node:path');
-        const pkgPath = join(import.meta.dirname || '.', '..', 'package.json');
-        const pkg = JSON.parse(await readFile(pkgPath, 'utf8'));
+        const pkg = JSON.parse(await readFile(path.join(PLUGIN_ROOT, 'package.json'), 'utf8'));
         pluginVersion = pkg.version || '0.0.0';
       } catch {
         ctx.log?.warn?.('[KK-W004] Could not read package.json for version');
@@ -60,8 +63,7 @@ const kinthaiPlugin = {
 
       const kithApiUrl = account.url.replace(/\/$/, '');
       const wsUrl = account.wsUrl || account.url.replace(/^http/, 'ws');
-      const { join } = await import('node:path');
-      const tokensFilePath = join(import.meta.dirname || '.', '..', '.tokens.json');
+      const tokensFilePath = path.join(PLUGIN_ROOT, '.tokens.json');
 
       // Auto-register agents if email is configured
       // 如果配置了 email，自动注册所有 agent
