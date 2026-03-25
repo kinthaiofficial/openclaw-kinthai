@@ -1,0 +1,7 @@
+.git/
+.github/
+.tokens.json
+.env
+*.log
+docs/
+.DS_Store
