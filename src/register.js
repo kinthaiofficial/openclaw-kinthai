@@ -89,8 +89,17 @@ export async function autoRegisterAgents(kinthaiUrl, email, tokensFilePath, log)
       });
 
       if (res.status === 409) {
-        log?.info?.(`[KK-REG] Agent "${agentId}" already registered (409)`);
-        skipped++;
+        const body = await res.json().catch(() => ({}));
+        if (body.api_key) {
+          // Recover token from server (same machine re-registering)
+          // 从服务器恢复 token（同一机器重新注册）
+          tokensData[agentId] = body.api_key;
+          registered++;
+          log?.info?.(`[KK-REG] Agent "${agentId}" already registered — token recovered`);
+        } else {
+          log?.info?.(`[KK-REG] Agent "${agentId}" already registered (409, no token in response)`);
+          skipped++;
+        }
         continue;
       }
 
