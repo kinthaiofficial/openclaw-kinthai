@@ -95,15 +95,23 @@ async function main() {
       }
     }
 
+    if (cfg.plugins?.entries?.['openclaw-kinthai']) {
+      delete cfg.plugins.entries['openclaw-kinthai'];
+      changed = true;
+    }
+    // Also clean legacy entry name
     if (cfg.plugins?.entries?.kinthai) {
       delete cfg.plugins.entries.kinthai;
       changed = true;
     }
 
     const allow = cfg.plugins?.allow;
-    if (Array.isArray(allow) && allow.includes('kinthai')) {
-      cfg.plugins.allow = allow.filter(a => a !== 'kinthai');
-      changed = true;
+    if (Array.isArray(allow)) {
+      const filtered = allow.filter(a => a !== 'openclaw-kinthai' && a !== 'kinthai');
+      if (filtered.length !== allow.length) {
+        cfg.plugins.allow = filtered;
+        changed = true;
+      }
     }
 
     if (changed) {

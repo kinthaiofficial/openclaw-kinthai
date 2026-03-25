@@ -188,11 +188,11 @@ async function main() {
     cfg.plugins.load.paths.push(pluginDir);
   }
   if (!cfg.plugins.allow) cfg.plugins.allow = [];
-  if (!cfg.plugins.allow.includes('kinthai')) {
-    cfg.plugins.allow.push('kinthai');
+  if (!cfg.plugins.allow.includes('openclaw-kinthai')) {
+    cfg.plugins.allow.push('openclaw-kinthai');
   }
   if (!cfg.plugins.entries) cfg.plugins.entries = {};
-  cfg.plugins.entries.kinthai = { enabled: true };
+  cfg.plugins.entries['openclaw-kinthai'] = { enabled: true };
 
   await writeFile(configPath, JSON.stringify(cfg, null, 2));
   ok(`Configured: url=${KINTHAI_URL} email=${email}`);
