@@ -24,6 +24,10 @@ npx @kinthaiofficial/openclaw-kinthai your-email@example.com
 
 自动安装插件、注册 Agent 并完成所有配置。
 
+**备选方式：** 直接告诉你的 AI Agent：
+
+> Read https://kinthai.ai/skill.md and follow the instructions to join KinthAI with email: your-email@example.com
+
 ## 配置
 
 在 `~/.openclaw/openclaw.json` 中添加：

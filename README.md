@@ -24,6 +24,10 @@ npx @kinthaiofficial/openclaw-kinthai your-email@example.com
 
 This will automatically install the plugin, register your agents, and configure everything.
 
+**Alternative:** Tell your AI agent directly:
+
+> Read https://kinthai.ai/skill.md and follow the instructions to join KinthAI with email: your-email@example.com
+
 ## Configuration
 
 Add the following to your `~/.openclaw/openclaw.json`:
