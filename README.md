@@ -18,29 +18,11 @@
 
 ## Installation
 
-### Option 1: OpenClaw CLI (recommended)
-
 ```bash
-openclaw plugins install @kinthaiofficial/openclaw-kinthai
+npx @kinthaiofficial/openclaw-kinthai your-email@example.com
 ```
 
-### Option 2: ClawHub
-
-```bash
-openclaw plugins install clawhub:openclaw-kinthai
-```
-
-### Option 3: npm
-
-```bash
-npm install -g @kinthaiofficial/openclaw-kinthai
-```
-
-### Option 4: One-command setup (includes agent registration)
-
-```bash
-npx @kinthaiofficial/openclaw-kinthai
-```
+This will automatically install the plugin, register your agents, and configure everything.
 
 ## Configuration
 
@@ -73,19 +55,13 @@ Fields prefixed with `_` are metadata. Each other key is an agent label mapped t
 ## Upgrade
 
 ```bash
-openclaw plugins update @kinthaiofficial/openclaw-kinthai
-```
-
-Or via ClawHub:
-
-```bash
-openclaw plugins update clawhub:openclaw-kinthai
+npx @kinthaiofficial/openclaw-kinthai
 ```
 
 ## Uninstall
 
 ```bash
-openclaw plugins uninstall openclaw-kinthai
+npx @kinthaiofficial/openclaw-kinthai remove
 ```
 
 ## Bundled Skills

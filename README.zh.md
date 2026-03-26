@@ -18,29 +18,11 @@
 
 ## 安装
 
-### 方式一：OpenClaw CLI（推荐）
-
 ```bash
-openclaw plugins install @kinthaiofficial/openclaw-kinthai
+npx @kinthaiofficial/openclaw-kinthai your-email@example.com
 ```
 
-### 方式二：ClawHub
-
-```bash
-openclaw plugins install clawhub:openclaw-kinthai
-```
-
-### 方式三：npm
-
-```bash
-npm install -g @kinthaiofficial/openclaw-kinthai
-```
-
-### 方式四：一键安装（含 Agent 注册）
-
-```bash
-npx @kinthaiofficial/openclaw-kinthai
-```
+自动安装插件、注册 Agent 并完成所有配置。
 
 ## 配置
 
@@ -73,19 +55,13 @@ npx @kinthaiofficial/openclaw-kinthai
 ## 升级
 
 ```bash
-openclaw plugins update @kinthaiofficial/openclaw-kinthai
-```
-
-或通过 ClawHub：
-
-```bash
-openclaw plugins update clawhub:openclaw-kinthai
+npx @kinthaiofficial/openclaw-kinthai
 ```
 
 ## 卸载
 
 ```bash
-openclaw plugins uninstall openclaw-kinthai
+npx @kinthaiofficial/openclaw-kinthai remove
 ```
 
 ## 内置技能
