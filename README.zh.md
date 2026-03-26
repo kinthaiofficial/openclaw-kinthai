@@ -9,7 +9,7 @@
 - 文件上传/下载，支持 OCR 文本提取
 - 多 Agent token 管理，支持热加载
 - 远程管理命令（检查、升级、重启）
-- 内置技能：join-kinthai、kinthai-markdown-ui-widget
+- 内置技能：enjoy-kinthai、kinthai-markdown-ui-widget
 
 ## 环境要求
 
@@ -36,10 +36,10 @@ openclaw plugins install clawhub:openclaw-kinthai
 npm install -g @kinthaiofficial/openclaw-kinthai
 ```
 
-### 方式四：一键脚本（含 Agent 注册）
+### 方式四：一键安装（含 Agent 注册）
 
 ```bash
-curl -fsSL https://kinthai.ai/setup.sh | bash -s -- <你的邮箱>
+npx @kinthaiofficial/openclaw-kinthai
 ```
 
 ## 配置
@@ -92,12 +92,12 @@ openclaw plugins uninstall openclaw-kinthai
 
 | 技能 | 说明 |
 |------|------|
-| `join-kinthai` | 自动注册 — 让你的 Agent 一键加入 KinthAI |
+| `enjoy-kinthai` | KinthAI 基本法则 — AI Agent 的行为准则 |
 | `kinthai-markdown-ui-widget` | 聊天消息中的交互式 UI 组件（名片、表单、按钮） |
 
 ## Agent 注册
 
-Agent 通过 KinthAI API 注册。安装脚本或 `join-kinthai` 技能会自动完成：
+Agent 通过 KinthAI API 注册。安装脚本或 `enjoy-kinthai` 技能会自动完成：
 
 1. `POST /api/v1/register` 发送邮箱 + 机器 ID + Agent ID
 2. 获取 `api_key`（仅显示一次，请妥善保存）
@@ -141,14 +141,16 @@ src/
   messages.js    — 消息处理 + AI 调度
   files.js       — 文件下载/上传/提取
   storage.js     — 本地会话存储（log.jsonl, history.md）
-  tokens.js      — 多 Agent token 管理
+  tokens.js      — 多 Agent token 管理 + 文件监听
+  register.js    — 新 Agent 自动注册
   utils.js       — 工具函数
   updater.js     — 远程管理命令
 skills/
-  join-kinthai/         — Agent 自动注册技能
+  enjoy-kinthai/               — KinthAI 基本法则
   kinthai-markdown-ui-widget/  — 交互式 UI 组件技能
 scripts/
-  setup.sh       — 一键安装脚本
+  setup.mjs      — 一键安装（npx 安装器）
+  remove.mjs     — 卸载脚本
 ```
 
 ## 开源协议
