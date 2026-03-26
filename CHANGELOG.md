@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.8 (2026-03-27)
+
+- Fixed: no longer defaults to "main" when agents directory is empty — skips registration instead
+- Fixed: .tokens.json now stores objects `{ api_key, kk_agent_id }` instead of plain strings (backward compatible)
+- Fixed: registration error logs now include the server's error message for easier debugging
+- Fixed: 409 conflict handling recovers kk_agent_id from server response
+
 ## 1.0.2 (2026-03-25)
 
 - Renamed skill: join-kinthai → enjoy-kinthai (KinthAI Fundamental Laws)

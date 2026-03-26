@@ -60,8 +60,8 @@ export async function autoRegisterAgents(kinthaiUrl, email, tokensFilePath, log)
   // 扫描所有 agent
   const agentIds = await scanAgents(openclawDir, log);
   if (agentIds.length === 0) {
-    agentIds.push('main');
-    log?.info?.('[KK-REG] No agents directory found, defaulting to "main"');
+    log?.info?.('[KK-REG] No agents found — skipping registration');
+    return null;
   }
 
   let registered = 0;
@@ -93,11 +93,11 @@ export async function autoRegisterAgents(kinthaiUrl, email, tokensFilePath, log)
         if (body.api_key) {
           // Recover token from server (same machine re-registering)
           // 从服务器恢复 token（同一机器重新注册）
-          tokensData[agentId] = body.api_key;
+          tokensData[agentId] = { api_key: body.api_key, kk_agent_id: body.kk_agent_id || agentId };
           registered++;
           log?.info?.(`[KK-REG] Agent "${agentId}" already registered — token recovered`);
         } else {
-          log?.info?.(`[KK-REG] Agent "${agentId}" already registered (409, no token in response)`);
+          log?.warn?.(`[KK-REG] Agent "${agentId}" conflict (409): ${body.message || 'unknown'}`);
           skipped++;
         }
         continue;
@@ -110,14 +110,15 @@ export async function autoRegisterAgents(kinthaiUrl, email, tokensFilePath, log)
       }
 
       if (!res.ok) {
-        log?.warn?.(`[KK-REG] Agent "${agentId}" registration failed: ${res.status}`);
+        const body = await res.json().catch(() => ({}));
+        log?.warn?.(`[KK-REG] Agent "${agentId}" registration failed (${res.status}): ${body.message || 'unknown error'}`);
         continue;
       }
 
       const data = await res.json();
-      tokensData[agentId] = data.api_key;
+      tokensData[agentId] = { api_key: data.api_key, kk_agent_id: data.kk_agent_id || agentId };
       registered++;
-      log?.info?.(`[KK-REG] Agent "${agentId}" registered — user_id=${data.user_id}`);
+      log?.info?.(`[KK-REG] Agent "${agentId}" registered — kk_agent_id=${data.kk_agent_id}`);
     } catch (err) {
       log?.warn?.(`[KK-REG] Agent "${agentId}" registration error: ${err.message}`);
     }
@@ -137,8 +138,11 @@ export async function autoRegisterAgents(kinthaiUrl, email, tokensFilePath, log)
   // 只返回 agent tokens（排除元数据字段）
   const tokens = {};
   for (const [k, v] of Object.entries(tokensData)) {
-    if (!k.startsWith('_') && v && typeof v === 'string') {
-      tokens[k] = v;
+    if (k.startsWith('_')) continue;
+    if (typeof v === 'object' && v?.api_key) {
+      tokens[k] = v.api_key;
+    } else if (typeof v === 'string' && v) {
+      tokens[k] = v;  // backward compat: old format was plain string
     }
   }
 

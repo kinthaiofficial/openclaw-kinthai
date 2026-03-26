@@ -96,18 +96,26 @@ export default defineChannelPluginEntry({
         });
 
         if (res.status === 409) {
-          log.info(`[KK-I019] Agent "${agentId}" already registered — skipping`);
+          const body = await res.json().catch(() => ({}));
+          if (body.api_key) {
+            tokensData[agentId] = { api_key: body.api_key, kk_agent_id: body.kk_agent_id || agentId };
+            await writeFile(tokensFilePath, JSON.stringify(tokensData, null, 2));
+            log.info(`[KK-I019] Agent "${agentId}" already registered — token recovered`);
+          } else {
+            log.warn(`[KK-I019] Agent "${agentId}" conflict (409): ${body.message || 'unknown'}`);
+          }
           return;
         }
         if (!res.ok) {
-          log.warn(`[KK-W006] Auto-register failed: ${res.status} ${await res.text()}`);
+          const body = await res.json().catch(() => ({}));
+          log.warn(`[KK-W006] Auto-register failed (${res.status}): ${body.message || 'unknown error'}`);
           return;
         }
 
         const data = await res.json();
-        tokensData[agentId] = data.api_key;
+        tokensData[agentId] = { api_key: data.api_key, kk_agent_id: data.kk_agent_id || agentId };
         await writeFile(tokensFilePath, JSON.stringify(tokensData, null, 2));
-        log.info(`[KK-I020] Agent "${agentId}" registered and token saved — file watcher will auto-connect`);
+        log.info(`[KK-I020] Agent "${agentId}" registered — kk_agent_id=${data.kk_agent_id}`);
       } catch (err) {
         log.warn(`[KK-W007] Auto-register error for "${agentId}": ${err.message}`);
       } finally {

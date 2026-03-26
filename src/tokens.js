@@ -14,9 +14,13 @@ export async function loadTokens(tokensFilePath, log) {
   const tokens = {};
   try {
     const data = JSON.parse(await readFile(tokensFilePath, 'utf8'));
-    for (const [label, token] of Object.entries(data)) {
+    for (const [label, val] of Object.entries(data)) {
       if (label.startsWith('_')) continue;
-      if (token && typeof token === 'string') tokens[label] = token;
+      if (typeof val === 'object' && val?.api_key) {
+        tokens[label] = val.api_key;
+      } else if (typeof val === 'string' && val) {
+        tokens[label] = val;  // backward compat
+      }
     }
   } catch {
     log?.error?.(
@@ -49,10 +53,11 @@ export function watchTokens(tokensFilePath, existingTokens, startAgentFn, log) {
   watchFile(tokensFilePath, { interval: 10000 }, async () => {
     try {
       const newData = JSON.parse(await readFile(tokensFilePath, 'utf8'));
-      for (const [label, token] of Object.entries(newData)) {
+      for (const [label, val] of Object.entries(newData)) {
         if (label.startsWith('_')) continue;
         if (knownTokens.has(label)) continue;
-        if (!token || typeof token !== 'string') continue;
+        const token = typeof val === 'object' ? val?.api_key : (typeof val === 'string' ? val : null);
+        if (!token) continue;
         knownTokens.add(label);
         log?.info?.(`[KK-I017] New agent token detected: "${label}" — starting connection`);
         await startAgentFn(token, label);
