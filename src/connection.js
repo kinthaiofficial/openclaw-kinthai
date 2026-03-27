@@ -10,12 +10,42 @@ export function createConnection(api, state, messageHandler, ctx) {
   let pingTimer = null;
   let stopped = false;
 
+  // Message deduplication — prevent duplicate processing on WS reconnect
+  // 消息去重 — 防止 WS 重连时重复处理
+  const recentMessageIds = new Map(); // messageId → timestamp
+  const DEDUPE_TTL_MS = 20 * 60_000; // 20 minutes
+  const DEDUPE_MAX = 5000;
+
+  function isDuplicate(messageId) {
+    if (!messageId) return false;
+    const now = Date.now();
+    // Prune expired entries when approaching max
+    // 接近上限时清理过期条目
+    if (recentMessageIds.size >= DEDUPE_MAX) {
+      for (const [id, ts] of recentMessageIds) {
+        if (now - ts > DEDUPE_TTL_MS) recentMessageIds.delete(id);
+      }
+    }
+    if (recentMessageIds.has(messageId)) return true;
+    recentMessageIds.set(messageId, now);
+    return false;
+  }
+
+  // Exponential backoff for reconnection: 5s → 10s → 20s → 40s → ... → 300s max
+  // 指数退避重连：5s → 10s → 20s → 40s → ... → 最大 300s
+  const RECONNECT_BASE_MS = 5000;
+  const RECONNECT_MAX_MS = 300_000; // 5 minutes
+  let reconnectAttempts = 0;
+
   const scheduleReconnect = () => {
     if (stopped || reconnectTimer) return;
+    const delay = Math.min(RECONNECT_BASE_MS * Math.pow(2, reconnectAttempts), RECONNECT_MAX_MS);
+    reconnectAttempts++;
+    log?.info?.(`[KK-W001] Reconnecting in ${Math.round(delay / 1000)}s (attempt ${reconnectAttempts})`);
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
       connect();
-    }, 5000);
+    }, delay);
   };
 
   function connect() {
@@ -31,6 +61,7 @@ export function createConnection(api, state, messageHandler, ctx) {
     ws.onopen = () => {
       log?.info?.('[KK-I004] WebSocket connected');
       state.connectedAt = Date.now();
+      reconnectAttempts = 0; // Reset backoff on successful connection
       // Client-side heartbeat to prevent VPC router conntrack timeout
       // 客户端心跳，防止跨子网路由器 conntrack 超时
       clearInterval(pingTimer);
@@ -80,6 +111,13 @@ export function createConnection(api, state, messageHandler, ctx) {
 
       if (event.event !== 'message.new') return;
 
+      // Deduplicate — skip if same message_id was recently processed
+      // 去重 — 跳过最近已处理过的 message_id
+      if (isDuplicate(event.message_id)) {
+        log?.debug?.(`[KK-I021] Duplicate message skipped: ${event.message_id}`);
+        return;
+      }
+
       log?.info?.(
         `[KK-I007] message.new received — conv=${event.conversation_id} ` +
         `msg=${event.message_id} trigger_agent=${event.trigger_agent || false}`,
@@ -102,7 +140,7 @@ export function createConnection(api, state, messageHandler, ctx) {
       if (stopped) return;
       log?.warn?.(
         `[KK-W001] WebSocket disconnected (code=${closeEvent?.code || '?'} ` +
-        `reason="${closeEvent?.reason || ''}") — reconnecting in 5s`,
+        `reason="${closeEvent?.reason || ''}")`,
       );
       scheduleReconnect();
     };

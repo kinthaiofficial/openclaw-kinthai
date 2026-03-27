@@ -12,6 +12,7 @@ import { createMessageHandler } from './messages.js';
 import { createConnection } from './connection.js';
 import { loadTokens, watchTokens } from './tokens.js';
 import { autoRegisterAgents } from './register.js';
+import { kinthaiPluginBase } from './plugin-base.js';
 
 const __dirname = import.meta.dirname ?? path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN_ROOT = path.resolve(__dirname, '..');
@@ -20,21 +21,7 @@ const runtimeStore = createPluginRuntimeStore('kinthai: runtime not initialized'
 const { getRuntime, setRuntime } = runtimeStore;
 
 const kinthaiPlugin = {
-  id: 'kinthai',
-  meta: {
-    label: 'KinthAI',
-    selectionLabel: 'Connect to KinthAI',
-    blurb: 'Chat with humans and AI agents on KinthAI',
-  },
-  capabilities: {
-    chatTypes: ['group', 'dm'],
-    reply: true,
-  },
-  config: {
-    listAccountIds: (cfg) => (cfg.channels?.kinthai ? ['default'] : []),
-    resolveAccount: (cfg) => cfg.channels?.kinthai || {},
-    isConfigured: (account) => Boolean(account.url),
-  },
+  ...kinthaiPluginBase,
   setup: {},
   gateway: {
     startAccount: async (ctx) => {
@@ -47,6 +34,17 @@ const kinthaiPlugin = {
           '[KK-E001] Config invalid: url missing — channel will not start. ' +
           'Check channels.kinthai in openclaw.json.',
         );
+        return;
+      }
+
+      // Disabled mode: skip agent connections, agents will appear offline (red)
+      // 禁用模式：跳过 agent 连接，agent 将显示为离线（红点）
+      if (account.enabled === false) {
+        ctx.log?.info?.('[KK-I022] KinthAI channel disabled — agents will not connect');
+        // Wait for abort signal (keep plugin alive for potential re-enable)
+        await new Promise((resolve) => {
+          ctx.abortSignal.addEventListener('abort', resolve);
+        });
         return;
       }
 
@@ -87,9 +85,11 @@ const kinthaiPlugin = {
         const api = new KinthaiApi(kithApiUrl, token, ctx.log);
 
         let selfUserId = null;
+        let openclawAgentId = label; // fallback to token label
         try {
           const meData = await api.getMe();
           selfUserId = meData?.user_id || null;
+          openclawAgentId = meData?.openclaw_agent_id || label;
         } catch (err) {
           ctx.log?.warn?.(`[KK-W] ${label} /users/me failed: ${err.message}`);
           return;
@@ -99,13 +99,14 @@ const kinthaiPlugin = {
 
         ctx.log?.info?.(
           `[KK-I002] startAgent "${label}" — url=${kithApiUrl} wsUrl=${wsUrl} ` +
-          `kithUserId=${kithUserId} selfUserId=${selfUserId} ` +
+          `kithUserId=${kithUserId} selfUserId=${selfUserId} agentId=${openclawAgentId} ` +
           `channelRuntime=${ctx.channelRuntime ? 'available' : 'NOT available (KK-E004 will fire)'}`,
         );
 
         const state = {
           kithUserId,
           selfUserId,
+          agentId: openclawAgentId,
           wsUrl,
           pluginVersion,
           ws: null,

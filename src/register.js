@@ -130,8 +130,9 @@ export async function autoRegisterAgents(kinthaiUrl, email, tokensFilePath, log)
     tokensData._machine_id = machineId;
     tokensData._email = email;
     tokensData._kinthai_url = kinthaiUrl;
-    await writeFile(tokensFilePath, JSON.stringify(tokensData, null, 2));
-    log?.info?.(`[KK-REG] Tokens saved — registered=${registered} skipped=${skipped}`);
+    await writeFile(tokensFilePath, JSON.stringify(tokensData, null, 2), { mode: 0o600 });
+    try { const { chmod } = await import('node:fs/promises'); await chmod(tokensFilePath, 0o600); } catch { /* best-effort */ }
+    log?.info?.(`[KK-REG] Tokens saved (mode 0600) — registered=${registered} skipped=${skipped}`);
   }
 
   // Return agent tokens only (exclude metadata fields)

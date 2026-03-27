@@ -99,7 +99,7 @@ export default defineChannelPluginEntry({
           const body = await res.json().catch(() => ({}));
           if (body.api_key) {
             tokensData[agentId] = { api_key: body.api_key, kk_agent_id: body.kk_agent_id || agentId };
-            await writeFile(tokensFilePath, JSON.stringify(tokensData, null, 2));
+            await writeFile(tokensFilePath, JSON.stringify(tokensData, null, 2), { mode: 0o600 });
             log.info(`[KK-I019] Agent "${agentId}" already registered — token recovered`);
           } else {
             log.warn(`[KK-I019] Agent "${agentId}" conflict (409): ${body.message || 'unknown'}`);
@@ -114,7 +114,7 @@ export default defineChannelPluginEntry({
 
         const data = await res.json();
         tokensData[agentId] = { api_key: data.api_key, kk_agent_id: data.kk_agent_id || agentId };
-        await writeFile(tokensFilePath, JSON.stringify(tokensData, null, 2));
+        await writeFile(tokensFilePath, JSON.stringify(tokensData, null, 2), { mode: 0o600 });
         log.info(`[KK-I020] Agent "${agentId}" registered — kk_agent_id=${data.kk_agent_id}`);
       } catch (err) {
         log.warn(`[KK-W007] Auto-register error for "${agentId}": ${err.message}`);

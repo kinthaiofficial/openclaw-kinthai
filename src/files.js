@@ -1,6 +1,9 @@
 /**
- * File handling: download, upload, text extraction, [FILE:] markers.
- * 文件处理：下载、上传、文本提取、[FILE:] 标记。
+ * File handling: download cache, upload via [FILE:] markers, media context for OpenClaw.
+ * 文件处理：下载缓存、[FILE:] 标记上传、为 OpenClaw mediaUnderstanding 准备媒体上下文。
+ *
+ * v2.0: Text extraction and base64 encoding removed — handled by OpenClaw core.
+ * v2.0: 文本提取和 base64 编码已移除，由 OpenClaw core 的 mediaUnderstanding 处理。
  */
 
 import { readFile, writeFile, stat } from 'node:fs/promises';
@@ -8,9 +11,26 @@ import { join, basename, isAbsolute } from 'node:path';
 import { sanitizeFileName } from './utils.js';
 import { WORKSPACE_KINTHAI, WORKSPACE_BASE } from './storage.js';
 
-const MAX_EXTRACT_CHARS = 25000;
+/**
+ * Map KinthAI file_type to MIME type for OpenClaw mediaUnderstanding.
+ * 将 KinthAI 的 file_type 映射为 MIME 类型。
+ */
+function mapFileType(fileType, mimeType) {
+  if (mimeType) return mimeType;
+  switch (fileType) {
+    case 'image': return 'image/jpeg';
+    case 'audio': return 'audio/mpeg';
+    case 'video': return 'video/mp4';
+    case 'document': return 'application/octet-stream';
+    default: return 'application/octet-stream';
+  }
+}
 
 export function createFileHandler(api, log) {
+  /**
+   * Download file from KinthAI backend and cache locally.
+   * 从 KinthAI 后端下载文件并缓存到本地。
+   */
   async function downloadAndSaveFile(file, convId) {
     const localName = `${file.file_id}_${sanitizeFileName(file.original_name)}`;
     const localPath = join(WORKSPACE_BASE, convId, 'files', localName);
@@ -28,61 +48,40 @@ export function createFileHandler(api, log) {
     return localName;
   }
 
-  async function getExtractedText(file, convId, localName) {
-    const cachePath = join(WORKSPACE_BASE, convId, 'files', localName + '.txt');
-    try {
-      return await readFile(cachePath, 'utf-8');
-    } catch { /* not cached */ }
+  /**
+   * Download files and return paths + MIME types for OpenClaw MsgContext.
+   * 下载文件并返回路径和 MIME 类型，供 OpenClaw MsgContext 使用。
+   *
+   * OpenClaw core will automatically apply mediaUnderstanding:
+   * - Images → vision description or native model processing
+   * - Audio → speech-to-text transcription
+   * - Video → video description
+   * - Documents → text extraction
+   */
+  async function resolveMediaForContext(files, convId) {
+    if (!files || files.length === 0) return { paths: [], types: [] };
 
-    try {
-      const data = await api.getFileExtract(file.file_id);
-      const text = (data.text || '').slice(0, MAX_EXTRACT_CHARS);
-      if (text) await writeFile(cachePath, text);
-      return text;
-    } catch (err) {
-      log?.warn?.(`[KK-W005] File extract failed (non-fatal) — file_id=${file.file_id}: ${err.message}`);
-      return '';
-    }
-  }
-
-  async function resolveAttachments(files, convId) {
-    if (!files || files.length === 0) return [];
-    const results = [];
+    const paths = [];
+    const types = [];
 
     for (const file of files) {
-      let localName = null;
       try {
-        localName = await downloadAndSaveFile(file, convId);
+        const localName = await downloadAndSaveFile(file, convId);
+        const localPath = join(WORKSPACE_BASE, convId, 'files', localName);
+        paths.push(localPath);
+        types.push(mapFileType(file.file_type, file.mime_type));
       } catch (err) {
-        log?.warn?.(`[KK-W004] Cannot download attachment — file_id=${file.file_id}: ${err.message}`);
-        results.push({ name: file.original_name, type: file.file_type, error: 'unavailable' });
-        continue;
+        log?.warn?.(`[KK-W004] File download failed — file_id=${file.file_id}: ${err.message}`);
       }
-
-      const attachment = {
-        name: file.original_name,
-        type: file.file_type,
-        local_path: `sessions/${convId}/files/${localName}`,
-      };
-
-      if (file.file_type === 'document') {
-        const text = await getExtractedText(file, convId, localName);
-        if (text) attachment.text = text;
-      } else if (file.file_type === 'image') {
-        try {
-          const buffer = await readFile(join(WORKSPACE_BASE, convId, 'files', localName));
-          attachment.base64 = buffer.toString('base64');
-          attachment.mime_type = file.mime_type || 'image/jpeg';
-        } catch {
-          attachment.note = 'Image stored locally but could not be read';
-        }
-      }
-
-      results.push(attachment);
     }
-    return results;
+
+    return { paths, types };
   }
 
+  /**
+   * Process [FILE:path] markers in AI reply text — upload files to KinthAI.
+   * 处理 AI 回复中的 [FILE:path] 标记 — 上传文件到 KinthAI。
+   */
   async function processFileMarkers(text, convId) {
     const fileIds = [];
     const markers = [...text.matchAll(/\[FILE:([^\]]+)\]/g)];
@@ -113,5 +112,5 @@ export function createFileHandler(api, log) {
     return { text: cleanText.trim(), fileIds };
   }
 
-  return { downloadAndSaveFile, resolveAttachments, processFileMarkers };
+  return { downloadAndSaveFile, resolveMediaForContext, processFileMarkers };
 }
