@@ -238,12 +238,27 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
   async function deliverReply(replyPayload, info, convId, state) {
     const kind = info?.kind || 'unknown';
 
-    if (!replyPayload.text || replyPayload.isReasoning) return;
+    if (!replyPayload.text) return;
 
     if (replyPayload.isError || /^LLM request rejected:/i.test(replyPayload.text)) {
       log?.warn?.(`[KK-W002] LLM error suppressed (not sent to chat): ${replyPayload.text.slice(0, 160)}`);
       return;
     }
+
+    // Build metadata for message kind (tool, reasoning, final)
+    // 构建消息元数据（工具调用、推理过程、最终回复）
+    const metadata = {};
+    if (replyPayload.isReasoning) {
+      metadata.kind = 'reasoning';
+    } else if (/^Reasoning:\s*\n/i.test(replyPayload.text)) {
+      // OpenClaw /reasoning on 模式：推理内容以 "Reasoning:\n" 前缀发出
+      metadata.kind = 'reasoning';
+    } else if (kind === 'tool') {
+      metadata.kind = 'tool';
+    } else if (kind === 'block') {
+      metadata.kind = 'block';
+    }
+    // 'final' and 'unknown' don't need metadata — rendered as normal messages
 
     // Process [FILE:] markers — upload files to KinthAI
     // 处理 [FILE:] 标记 — 上传文件到 KinthAI
@@ -253,6 +268,7 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
     if (text) msgBody.content = text;
     if (fileIds.length > 0) msgBody.file_ids = fileIds;
     if (!msgBody.content && !msgBody.file_ids?.length) return;
+    if (Object.keys(metadata).length > 0) msgBody.metadata = metadata;
 
     const sent = await api.sendMessage(convId, msgBody);
 

@@ -21,12 +21,21 @@ import { homedir } from 'node:os';
  * @param {object} log - Logger
  * @returns {object|null} tokens map, or null on failure
  */
-export async function autoRegisterAgents(kinthaiUrl, email, tokensFilePath, log) {
+export async function autoRegisterAgents(kinthaiUrl, email, tokensFilePath, log, openclawDir = null) {
   log?.info?.('[KK-REG] Auto-registration scan starting...');
 
-  // Read machine ID from OpenClaw identity
-  // 从 OpenClaw identity 读取机器 ID
-  const openclawDir = await findOpenClawDir();
+  // Resolve OpenClaw directory: prefer explicit param, fallback to deriving from tokensFilePath, then search
+  // 解析 OpenClaw 目录：优先用传入的参数，其次从 tokensFilePath 推导，最后搜索
+  if (!openclawDir) {
+    // tokensFilePath is typically .openclaw/channels/kinthai/.tokens.json → go up 3 levels
+    const derived = join(tokensFilePath, '..', '..', '..');
+    try {
+      await stat(join(derived, 'identity', 'device.json'));
+      openclawDir = derived;
+    } catch {
+      openclawDir = await findOpenClawDir();
+    }
+  }
   if (!openclawDir) {
     log?.warn?.('[KK-REG] Could not find OpenClaw directory');
     return null;

@@ -17,13 +17,14 @@ export class KinthaiApi {
     };
   }
 
-  async sendMessage(convId, { content, file_ids, mentions }) {
+  async sendMessage(convId, { content, file_ids, mentions, metadata }) {
     if (!convId) throw new Error('KK-V001: conversation_id required');
     if (!content && (!file_ids?.length)) throw new Error('KK-V002: content or file_ids required');
     const body = {};
     if (content) body.content = content;
     if (file_ids?.length) body.file_ids = file_ids;
     if (mentions) body.mentions = mentions;
+    if (metadata) body.metadata = metadata;
     return this._fetch(`/api/v1/conversations/${convId}/messages`, 'POST', body);
   }
 

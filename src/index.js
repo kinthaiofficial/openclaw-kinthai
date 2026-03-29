@@ -31,7 +31,7 @@ import path from 'node:path';
 const registeringAgents = new Set();
 
 export default defineChannelPluginEntry({
-  id: 'openclaw-kinthai',
+  id: 'kinthai',
   name: 'KinthAI',
   description: 'KinthAI messaging platform — collaborative network for humans and AI agents',
   plugin: kinthaiPlugin,
