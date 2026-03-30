@@ -30,7 +30,7 @@ export async function autoRegisterAgents(kinthaiUrl, email, tokensFilePath, log,
     // tokensFilePath is typically .openclaw/channels/kinthai/.tokens.json → go up 3 levels
     const derived = join(tokensFilePath, '..', '..', '..');
     try {
-      await stat(join(derived, 'identity', 'device.json'));
+      await stat(join(derived, 'openclaw.json'));
       openclawDir = derived;
     } catch {
       openclawDir = await findOpenClawDir();
@@ -41,17 +41,24 @@ export async function autoRegisterAgents(kinthaiUrl, email, tokensFilePath, log,
     return null;
   }
 
+  // Read machine ID from identity/device.json
+  // OpenClaw v2026.3.28+ only creates identity on first RPC call (gateway.identity.get),
+  // not during onboard or gateway startup. If missing, trigger creation via gateway RPC.
+  // OpenClaw v2026.3.28+ 只在首次 RPC 调用时创建 identity，不在 onboard 或 gateway 启动时创建。
+  // 如果不存在，通过 gateway RPC 触发创建。
   let machineId;
   try {
     const deviceJson = JSON.parse(await readFile(join(openclawDir, 'identity', 'device.json'), 'utf8'));
     machineId = deviceJson.deviceId;
   } catch {
-    log?.warn?.('[KK-REG] Could not read identity/device.json');
-    return null;
+    // identity not yet created — try to trigger via gateway RPC
+    // identity 尚未创建 — 尝试通过 gateway RPC 触发
+    log?.info?.('[KK-REG] identity/device.json not found, triggering creation via gateway RPC...');
+    machineId = await triggerIdentityCreation(openclawDir, log);
   }
 
   if (!machineId) {
-    log?.warn?.('[KK-REG] deviceId is empty');
+    log?.warn?.('[KK-REG] Could not obtain deviceId — gateway may not be running');
     return null;
   }
 
@@ -174,11 +181,82 @@ async function findOpenClawDir() {
 
   for (const dir of candidates) {
     try {
-      await stat(join(dir, 'identity', 'device.json'));
+      await stat(join(dir, 'openclaw.json'));
       return dir;
     } catch { /* not here */ }
   }
   return null;
+}
+
+/**
+ * Trigger identity creation via gateway RPC.
+ * OpenClaw v2026.3.28+ creates identity/device.json only on first gateway.identity.get call.
+ * We connect to the local gateway WebSocket and call this RPC method.
+ *
+ * 通过 gateway RPC 触发 identity 创建。
+ * OpenClaw v2026.3.28+ 只在首次 gateway.identity.get 调用时创建 identity/device.json。
+ * 我们连接本地 gateway WebSocket 并调用此 RPC 方法。
+ */
+async function triggerIdentityCreation(openclawDir, log) {
+  try {
+    // Read gateway port and auth token from config
+    const cfg = JSON.parse(await readFile(join(openclawDir, 'openclaw.json'), 'utf8'));
+    const port = cfg.gateway?.port || 18789;
+    const token = typeof cfg.gateway?.auth?.token === 'string' ? cfg.gateway.auth.token : '';
+
+    // Try CLI first (simplest and most reliable)
+    const { execSync } = await import('node:child_process');
+    try {
+      execSync('openclaw health', { timeout: 10000, stdio: 'pipe' });
+    } catch { /* ignore errors — identity may still have been created */ }
+
+    // Check if identity was created
+    try {
+      const deviceJson = JSON.parse(await readFile(join(openclawDir, 'identity', 'device.json'), 'utf8'));
+      if (deviceJson.deviceId) {
+        log?.info?.(`[KK-REG] Identity created via CLI — deviceId=${deviceJson.deviceId.slice(0, 16)}...`);
+        return deviceJson.deviceId;
+      }
+    } catch { /* not created yet */ }
+
+    // Fallback: direct WebSocket RPC call to gateway
+    const { WebSocket } = await import('ws').catch(() => ({ WebSocket: globalThis.WebSocket }));
+    if (!WebSocket) {
+      log?.warn?.('[KK-REG] No WebSocket available for RPC fallback');
+      return null;
+    }
+
+    return await new Promise((resolve) => {
+      const timer = setTimeout(() => { ws?.close(); resolve(null); }, 8000);
+      const wsUrl = `ws://127.0.0.1:${port}`;
+      const ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        // Authenticate then request identity
+        ws.send(JSON.stringify({ method: 'connect', params: { token, scopes: ['admin'] } }));
+      };
+
+      ws.onmessage = async (evt) => {
+        try {
+          const msg = JSON.parse(typeof evt.data === 'string' ? evt.data : evt.data.toString());
+          if (msg.method === 'connect' && msg.result) {
+            // Connected — now request identity
+            ws.send(JSON.stringify({ method: 'gateway.identity.get', params: {} }));
+          } else if (msg.result?.deviceId) {
+            clearTimeout(timer);
+            ws.close();
+            log?.info?.(`[KK-REG] Identity obtained via RPC — deviceId=${msg.result.deviceId.slice(0, 16)}...`);
+            resolve(msg.result.deviceId);
+          }
+        } catch { /* parse error */ }
+      };
+
+      ws.onerror = () => { clearTimeout(timer); resolve(null); };
+    });
+  } catch (err) {
+    log?.warn?.(`[KK-REG] triggerIdentityCreation error: ${err.message}`);
+    return null;
+  }
 }
 
 /**
