@@ -7,6 +7,10 @@
  *   - Per-conversation debounce: accumulates rapid messages, flushes as batch
  */
 
+// Module-level logger — set by the first createConnection call
+// 模块级日志引用 — 由首个 createConnection 调用设置
+let _log = null;
+
 // ── Dispatch queue (sliding window semaphore) ────────────────────────────────
 // 并发信号量 — 控制同时进行的 AI dispatch 数量
 const MAX_CONCURRENT = 4;
@@ -21,12 +25,60 @@ function enqueueDispatch(fn) {
       catch (e) { reject(e); }
       finally {
         activeDispatches--;
-        if (dispatchQueue.length > 0) dispatchQueue.shift()();
+        if (dispatchQueue.length > 0) {
+          _log?.debug?.(`[KK-Q] Dispatch next — queue=${dispatchQueue.length} active=${activeDispatches}`);
+          dispatchQueue.shift()();
+        }
+        checkThaw(); // Check if we can resume after draining
       }
     };
-    if (activeDispatches < MAX_CONCURRENT) run();
-    else dispatchQueue.push(run);
+    if (activeDispatches < MAX_CONCURRENT) {
+      run();
+    } else {
+      dispatchQueue.push(run);
+      _log?.info?.(`[KK-Q] Dispatch queued — queue=${dispatchQueue.length} active=${activeDispatches}`);
+      checkFreeze(); // Check if queue is overloaded
+    }
   });
+}
+
+// ── Backpressure — freeze when queue is overloaded ───────────────────────────
+// 背压保护 — 队列积压超阈值时冻结，消化后解冻
+// 冻结期间消息继续积攒到 debounce，不 flush 到 dispatch 队列
+const QUEUE_FREEZE_THRESHOLD = 10;  // queue > 10 → freeze
+const QUEUE_THAW_THRESHOLD = 2;     // queue ≤ 2  → thaw
+let frozen = false;
+
+function checkFreeze() {
+  if (!frozen && dispatchQueue.length > QUEUE_FREEZE_THRESHOLD) {
+    frozen = true;
+    _log?.warn?.(
+      `[KK-Q] ⚠ FROZEN — queue=${dispatchQueue.length} active=${activeDispatches} ` +
+      `(threshold=${QUEUE_FREEZE_THRESHOLD}). New messages will accumulate until thaw.`,
+    );
+  }
+}
+
+function checkThaw() {
+  if (frozen && dispatchQueue.length <= QUEUE_THAW_THRESHOLD) {
+    frozen = false;
+    _log?.warn?.(
+      `[KK-Q] ✓ THAWED — queue=${dispatchQueue.length} active=${activeDispatches}. ` +
+      `Resuming normal dispatch. Flushing pending batches.`,
+    );
+    // Flush all pending batches that accumulated during freeze
+    for (const [convId] of pendingBatches) {
+      const batch = pendingBatches.get(convId);
+      if (batch && batch.flushFn) {
+        clearTimeout(batch.debounceTimer);
+        clearTimeout(batch.forceTimer);
+        const events = batch.events;
+        const fn = batch.flushFn;
+        pendingBatches.delete(convId);
+        fn(events);
+      }
+    }
+  }
 }
 
 // ── Debounce batching (per conversation) ─────────────────────────────────────
@@ -35,7 +87,7 @@ const DEBOUNCE_MS = 3000;   // 3s quiet → flush
 const MAX_WAIT_MS = 15000;  // force flush after 15s even if messages keep coming
 const MAX_BATCH = 20;       // flush immediately if batch reaches this size
 
-// Map<conversationId, { events[], debounceTimer, forceTimer }>
+// Map<conversationId, { events[], debounceTimer, forceTimer, flushFn }>
 const pendingBatches = new Map();
 
 function addToPending(convId, event, flushFn) {
@@ -43,15 +95,32 @@ function addToPending(convId, event, flushFn) {
     pendingBatches.set(convId, {
       events: [],
       debounceTimer: null,
-      forceTimer: setTimeout(() => flushBatch(convId, flushFn), MAX_WAIT_MS),
+      forceTimer: null,
+      flushFn, // store for thaw-time flush
     });
   }
   const batch = pendingBatches.get(convId);
   batch.events.push(event);
+  batch.flushFn = flushFn;
+
+  // Frozen → accumulate only, no flush
+  if (frozen) {
+    clearTimeout(batch.debounceTimer);
+    clearTimeout(batch.forceTimer);
+    _log?.debug?.(
+      `[KK-Q] Frozen accumulate — conv=${convId} pending=${batch.events.length}`,
+    );
+    return;
+  }
 
   // Reset debounce timer on each new message
   clearTimeout(batch.debounceTimer);
   batch.debounceTimer = setTimeout(() => flushBatch(convId, flushFn), DEBOUNCE_MS);
+
+  // Set force timer if not already set
+  if (!batch.forceTimer) {
+    batch.forceTimer = setTimeout(() => flushBatch(convId, flushFn), MAX_WAIT_MS);
+  }
 
   // Immediate flush if batch is full
   if (batch.events.length >= MAX_BATCH) {
@@ -70,11 +139,16 @@ function flushBatch(convId, flushFn) {
   clearTimeout(batch.forceTimer);
   const events = batch.events;
   pendingBatches.delete(convId);
+  _log?.info?.(
+    `[KK-Q] Debounce flush — conv=${convId} batch=${events.length} ` +
+    `queue=${dispatchQueue.length} active=${activeDispatches}`,
+  );
   flushFn(events);
 }
 
 export function createConnection(api, state, messageHandler, ctx) {
   const log = ctx.log;
+  if (!_log) _log = log; // 设置模块级日志
   let ws = null;
   let reconnectTimer = null;
   let pingTimer = null;
@@ -197,18 +271,19 @@ export function createConnection(api, state, messageHandler, ctx) {
 
       // Debounce: accumulate per conversation, flush after quiet period
       // 按 conversation 积攒，静默后批量 flush
+      const convId = event.conversation_id;
       addToPending(convId, event, (batchedEvents) => {
         // Enqueue the batch into the concurrency-limited dispatch queue
         // 批量入队，受并发信号量控制
         enqueueDispatch(async () => {
+          log?.info?.(
+            `[KK-I026] Dispatch start — conv=${convId} batch=${batchedEvents.length} ` +
+            `queue=${dispatchQueue.length} active=${activeDispatches}`,
+          );
           try {
             if (batchedEvents.length === 1) {
               await messageHandler.handleMessageEvent(batchedEvents[0]);
             } else {
-              log?.info?.(
-                `[KK-I022] Batched dispatch — conv=${convId} ` +
-                `messages=${batchedEvents.length} ids=[${batchedEvents.map(e => e.message_id).join(',')}]`,
-              );
               await messageHandler.handleMessageEvent(batchedEvents[0], batchedEvents);
             }
           } catch (err) {
