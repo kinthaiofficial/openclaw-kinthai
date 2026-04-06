@@ -271,17 +271,21 @@ export function createConnection(api, state, messageHandler, ctx) {
       if (!event.trigger_agent) return;
 
       const convId = event.conversation_id;
-      const cs = getConvState(convId);
+      // Per-agent per-conversation key — each agent has its own independent queue
+      // 每个 agent 在每个对话中有独立的队列状态（同一进程共享模块变量）
+      const agentTag = state.kithUserId || api.token.slice(-8);
+      const stateKey = `${agentTag}:${convId}`;
+      const cs = getConvState(stateKey);
 
       // Post-thaw: block agent messages until a human speaks
       // 解冻后：跳过 agent 消息，等人类发消息才恢复循环
       if (cs.waitingForHuman) {
         if (event.sender_type === 'human') {
           cs.waitingForHuman = false;
-          log?.info?.(`[KK-Q] ✓ Human message received — conv=${convId}, resuming normal dispatch.`);
+          log?.info?.(`[KK-Q] ✓ Human message received — agent=${agentTag} conv=${convId}, resuming.`);
         } else {
           log?.debug?.(
-            `[KK-Q] Post-thaw skip — conv=${convId} ` +
+            `[KK-Q] Post-thaw skip — agent=${agentTag} conv=${convId} ` +
             `msg=${event.message_id} sender_type=${event.sender_type}`,
           );
           return;
@@ -290,12 +294,11 @@ export function createConnection(api, state, messageHandler, ctx) {
 
       // Debounce: accumulate per conversation, flush after quiet period
       // 按 conversation 积攒，静默后批量 flush
-      addToPending(convId, event, (batchedEvents) => {
-        // Enqueue the batch into the per-conversation dispatch queue
-        // 批量入队，受对话级并发控制
-        enqueueDispatch(convId, async () => {
+      addToPending(stateKey, event, (batchedEvents) => {
+        // Enqueue the batch into the per-agent per-conversation dispatch queue
+        enqueueDispatch(stateKey, async () => {
           log?.info?.(
-            `[KK-I026] Dispatch start — conv=${convId} batch=${batchedEvents.length} ` +
+            `[KK-I026] Dispatch start — agent=${agentTag} conv=${convId} batch=${batchedEvents.length} ` +
             `queue=${cs.queue.length} active=${cs.active}`,
           );
           try {
