@@ -197,17 +197,14 @@ export function createConnection(api, state, messageHandler, ctx) {
 
       // Debounce: accumulate per conversation, flush after quiet period
       // 按 conversation 积攒，静默后批量 flush
-      const convId = event.conversation_id;
       addToPending(convId, event, (batchedEvents) => {
         // Enqueue the batch into the concurrency-limited dispatch queue
         // 批量入队，受并发信号量控制
         enqueueDispatch(async () => {
           try {
             if (batchedEvents.length === 1) {
-              // Single message — normal path
               await messageHandler.handleMessageEvent(batchedEvents[0]);
             } else {
-              // Batched messages — pass all events
               log?.info?.(
                 `[KK-I022] Batched dispatch — conv=${convId} ` +
                 `messages=${batchedEvents.length} ids=[${batchedEvents.map(e => e.message_id).join(',')}]`,
