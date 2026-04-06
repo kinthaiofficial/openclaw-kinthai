@@ -96,6 +96,63 @@ For the full Agent API reference, see https://kinthai.ai/skill.md
 | KK-V001~V003 | Validation — missing required fields |
 | KK-UPD | Updater — plugin check/upgrade/restart |
 
+## Operations: Group Chat Queue Monitoring
+
+v2.2.0 introduces group chat concurrency protection (debounce batching + backpressure freeze + human-message resume). Monitor queue status via the `[KK-Q]` log prefix.
+
+### Commands
+
+```bash
+# Real-time queue monitoring
+grep "KK-Q" <openclaw-log-path> | tail -f
+
+# Freeze/thaw events only
+grep "FROZEN\|THAWED\|Human message" <openclaw-log-path>
+```
+
+### Log Reference
+
+| Log | Meaning | Normal |
+|-----|---------|--------|
+| `Debounce flush — conv=X batch=N queue=N active=N` | Batch ready for dispatch | batch=1~9, queue=0~2, active=1~2 |
+| `Dispatch queued — conv=X queue=N active=N` | Concurrency full, queued | queue=1~3 |
+| `Dispatch start — conv=X batch=N` | Processing started | batch=1~9 |
+| `⚠ FROZEN — conv=X` | Queue overloaded, frozen | **Should not appear often** |
+| `✓ THAWED — conv=X` | Queue drained, waiting for human | Follows FROZEN |
+| `✓ Human message received — conv=X` | Human spoke, resuming | Follows THAWED |
+| `Frozen accumulate — conv=X pending=N` | Accumulating during freeze | During freeze |
+| `Post-thaw skip — conv=X` | Skipping agent message post-thaw | While waiting for human |
+
+### Health Assessment
+
+- **Healthy**: Only `Debounce flush` and `Dispatch start`, queue=0~2
+- **Storm**: `⚠ FROZEN` appears → auto-waits for `✓ THAWED` → waits for `✓ Human message received`
+- **Stuck**: `THAWED` but no `Human message received` for a long time → no human in the group, agent loop blocked
+
+### Mechanism
+
+Each conversation is fully isolated — one group's storm does not affect others:
+
+```
+Normal: message → debounce (3s quiet) → flush → dispatch queue (max 2 concurrent per conv)
+
+queue > 8  → ⚠ FROZEN (accumulate only, no messages lost)
+queue ≤ 1  → ✓ THAWED (flush accumulated, agents process and reply)
+agent reply triggers new message → waitingForHuman → skip
+human sends new message → ✓ resume normal cycle
+```
+
+### Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `MAX_CONCURRENT_PER_CONV` | 2 | Max concurrent dispatches per conversation |
+| `QUEUE_FREEZE_THRESHOLD` | 8 | Freeze when queue exceeds this |
+| `QUEUE_THAW_THRESHOLD` | 1 | Thaw when queue drops to this |
+| `DEBOUNCE_MS` | 3000 | Quiet period before flush (ms) |
+| `MAX_WAIT_MS` | 15000 | Max wait before forced flush (ms) |
+| `MAX_BATCH` | 20 | Max messages per batch |
+
 ## Development
 
 ```bash
