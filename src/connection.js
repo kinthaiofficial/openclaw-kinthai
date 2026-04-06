@@ -1,7 +1,77 @@
 /**
  * WebSocket connection lifecycle: connect, reconnect, event dispatch.
  * WebSocket 连接生命周期：连接、重连、事件分发。
+ *
+ * v2.2.0: Dispatch queue + debounce batching for group chat scalability.
+ *   - Sliding window semaphore: limits concurrent AI dispatches (default 4)
+ *   - Per-conversation debounce: accumulates rapid messages, flushes as batch
  */
+
+// ── Dispatch queue (sliding window semaphore) ────────────────────────────────
+// 并发信号量 — 控制同时进行的 AI dispatch 数量
+const MAX_CONCURRENT = 4;
+let activeDispatches = 0;
+const dispatchQueue = [];
+
+function enqueueDispatch(fn) {
+  return new Promise((resolve, reject) => {
+    const run = async () => {
+      activeDispatches++;
+      try { resolve(await fn()); }
+      catch (e) { reject(e); }
+      finally {
+        activeDispatches--;
+        if (dispatchQueue.length > 0) dispatchQueue.shift()();
+      }
+    };
+    if (activeDispatches < MAX_CONCURRENT) run();
+    else dispatchQueue.push(run);
+  });
+}
+
+// ── Debounce batching (per conversation) ─────────────────────────────────────
+// 按 conversation 积攒消息，静默后一次性 flush
+const DEBOUNCE_MS = 3000;   // 3s quiet → flush
+const MAX_WAIT_MS = 15000;  // force flush after 15s even if messages keep coming
+const MAX_BATCH = 20;       // flush immediately if batch reaches this size
+
+// Map<conversationId, { events[], debounceTimer, forceTimer }>
+const pendingBatches = new Map();
+
+function addToPending(convId, event, flushFn) {
+  if (!pendingBatches.has(convId)) {
+    pendingBatches.set(convId, {
+      events: [],
+      debounceTimer: null,
+      forceTimer: setTimeout(() => flushBatch(convId, flushFn), MAX_WAIT_MS),
+    });
+  }
+  const batch = pendingBatches.get(convId);
+  batch.events.push(event);
+
+  // Reset debounce timer on each new message
+  clearTimeout(batch.debounceTimer);
+  batch.debounceTimer = setTimeout(() => flushBatch(convId, flushFn), DEBOUNCE_MS);
+
+  // Immediate flush if batch is full
+  if (batch.events.length >= MAX_BATCH) {
+    clearTimeout(batch.debounceTimer);
+    flushBatch(convId, flushFn);
+  }
+}
+
+function flushBatch(convId, flushFn) {
+  const batch = pendingBatches.get(convId);
+  if (!batch || batch.events.length === 0) {
+    pendingBatches.delete(convId);
+    return;
+  }
+  clearTimeout(batch.debounceTimer);
+  clearTimeout(batch.forceTimer);
+  const events = batch.events;
+  pendingBatches.delete(convId);
+  flushFn(events);
+}
 
 export function createConnection(api, state, messageHandler, ctx) {
   const log = ctx.log;
@@ -125,14 +195,33 @@ export function createConnection(api, state, messageHandler, ctx) {
 
       if (!event.trigger_agent) return;
 
-      try {
-        await messageHandler.handleMessageEvent(event);
-      } catch (err) {
-        log?.error?.(
-          `[KK-E006] handleMessageEvent uncaught error — conv=${event.conversation_id} ` +
-          `msg=${event.message_id}: ${err.message}\n${err.stack || ''}`,
-        );
-      }
+      // Debounce: accumulate per conversation, flush after quiet period
+      // 按 conversation 积攒，静默后批量 flush
+      const convId = event.conversation_id;
+      addToPending(convId, event, (batchedEvents) => {
+        // Enqueue the batch into the concurrency-limited dispatch queue
+        // 批量入队，受并发信号量控制
+        enqueueDispatch(async () => {
+          try {
+            if (batchedEvents.length === 1) {
+              // Single message — normal path
+              await messageHandler.handleMessageEvent(batchedEvents[0]);
+            } else {
+              // Batched messages — pass all events
+              log?.info?.(
+                `[KK-I022] Batched dispatch — conv=${convId} ` +
+                `messages=${batchedEvents.length} ids=[${batchedEvents.map(e => e.message_id).join(',')}]`,
+              );
+              await messageHandler.handleMessageEvent(batchedEvents[0], batchedEvents);
+            }
+          } catch (err) {
+            log?.error?.(
+              `[KK-E006] handleMessageEvent uncaught error — conv=${convId} ` +
+              `batch=${batchedEvents.length}: ${err.message}\n${err.stack || ''}`,
+            );
+          }
+        }).catch(() => {}); // enqueueDispatch errors already logged above
+      });
     };
 
     ws.onclose = (closeEvent) => {

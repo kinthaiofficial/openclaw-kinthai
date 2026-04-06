@@ -44,8 +44,13 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
   /**
    * Build BodyForAgent — natural language context + plain message text.
    * 构建 BodyForAgent — 自然语言上下文 + 纯消息文本（方案 C）。
+   *
+   * @param {object}   conv        Conversation object
+   * @param {object[]} members     Member list
+   * @param {object}   triggerMsg  Primary trigger message
+   * @param {object[]} [batchMsgs] Additional batched messages (debounce mode)
    */
-  function buildBodyForAgent(conv, members, triggerMsg) {
+  function buildBodyForAgent(conv, members, triggerMsg, batchMsgs) {
     const lines = [];
     const isGroup = !conv.is_direct;
     const selfId = state.selfUserId;
@@ -66,7 +71,19 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
     }
 
     lines.push('');
-    lines.push(triggerMsg.content || '');
+
+    // Batched mode: combine multiple messages into structured text
+    // 批量模式：合并多条消息为结构化文本
+    if (batchMsgs && batchMsgs.length > 1) {
+      lines.push(`[${batchMsgs.length} messages received in this batch]`);
+      for (const msg of batchMsgs) {
+        const msgSender = members.find(m => String(m.id) === String(msg.sender_id));
+        const name = msgSender?.display_name || String(msg.sender_id);
+        lines.push(`[${name}]: ${msg.content || ''}`);
+      }
+    } else {
+      lines.push(triggerMsg.content || '');
+    }
     return lines.join('\n');
   }
 
@@ -90,8 +107,11 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
   /**
    * Main message handler — OpenClaw standard flow.
    * 主消息处理 — OpenClaw 标准流程。
+   *
+   * @param {object} event        Primary message.new event
+   * @param {object[]} [batchedEvents]  If multiple messages were debounced, all events
    */
-  async function handleMessageEvent(event) {
+  async function handleMessageEvent(event, batchedEvents) {
     const { conversation_id, message_id } = event;
 
     await ensureSessionDir(conversation_id);
@@ -106,14 +126,30 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
 
     const members = membersResp.members || [];
 
-    // 2. Find trigger message — fetch only this message
-    // 2. 获取触发消息
+    // 2. Find trigger message(s)
+    // 2. 获取触发消息（单条或批量）
+    const isBatch = batchedEvents && batchedEvents.length > 1;
+    const batchMessageIds = isBatch
+      ? new Set(batchedEvents.map(e => e.message_id))
+      : null;
+
+    // Fetch enough messages to cover the batch
+    const fetchCount = isBatch ? Math.max(batchedEvents.length + 5, 10) : 5;
     let triggerMsg = null;
+    let batchMessages = [];
     try {
-      const messagesResp = await api.getMessages(conversation_id, 5);
+      const messagesResp = await api.getMessages(conversation_id, fetchCount);
       const apiMessages = messagesResp.messages || [];
-      triggerMsg = apiMessages.find(m => m.message_id === message_id)
-        || apiMessages[apiMessages.length - 1];
+      if (isBatch) {
+        // Collect all batched messages in order
+        batchMessages = apiMessages.filter(m => batchMessageIds.has(m.message_id));
+        // Use the latest message as the primary trigger
+        triggerMsg = batchMessages[batchMessages.length - 1]
+          || apiMessages[apiMessages.length - 1];
+      } else {
+        triggerMsg = apiMessages.find(m => m.message_id === message_id)
+          || apiMessages[apiMessages.length - 1];
+      }
     } catch (err) {
       log?.warn?.(`[KK-W007] Failed to fetch messages: ${err.message}`);
     }
@@ -145,8 +181,11 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
 
     // 5. Build BodyForAgent (Plan C: natural language context + plain text)
     // 5. 构建 BodyForAgent（方案 C：自然语言上下文 + 纯文本）
-    const bodyForAgent = buildBodyForAgent(conv, members, triggerMsg);
-    const rawBody = triggerMsg.content || '';
+    // If batched, pass batchMessages for combined context
+    const bodyForAgent = buildBodyForAgent(conv, members, triggerMsg, isBatch ? batchMessages : null);
+    const rawBody = isBatch
+      ? batchMessages.map(m => m.content || '').join('\n')
+      : (triggerMsg.content || '');
 
     // 6. Check channelRuntime availability
     // 6. 检查 channelRuntime 可用性
