@@ -161,4 +161,8 @@ async function main() {
   console.log(`\n${bold('KinthAI plugin removed.')}\n`);
 }
 
-main().catch(e => { err(e.message); process.exit(1); });
+// Export for setup.mjs, also run directly if called as script
+export { main };
+if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('remove.mjs')) {
+  main().catch(e => { err(e.message); process.exit(1); });
+}
