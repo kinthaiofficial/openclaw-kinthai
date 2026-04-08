@@ -53,20 +53,14 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
   function buildBodyForAgent(conv, members, triggerMsg, batchMsgs) {
     const lines = [];
     const isGroup = !conv.is_direct;
-    const selfId = state.selfUserId;
 
+    // Minimal context line — role/member details injected via prependSystemContext hook
     if (isGroup) {
-      const memberLabels = members
-        .filter(m => String(m.id) !== String(selfId))
-        .map(m => buildPeerLabel(m))
-        .join(', ');
-      lines.push(`[Context: Group "${conv.name || conv.conversation_id}" | Members: ${memberLabels}]`);
+      lines.push(`[Group: ${conv.name || conv.conversation_id}]`);
     } else {
-      const peer = members.find(m => String(m.id) !== String(selfId));
+      const peer = members.find(m => String(m.id) !== String(state.selfUserId));
       if (peer) {
-        lines.push(`[Context: DM with ${buildPeerLabel(peer)}]`);
-      } else {
-        lines.push(`[Context: DM with User#${triggerMsg.sender_id}]`);
+        lines.push(`[DM with ${buildPeerLabel(peer)}]`);
       }
     }
 

@@ -20,11 +20,98 @@
  */
 
 import { defineChannelPluginEntry } from 'openclaw/plugin-sdk/core';
-import { kinthaiPlugin, setRuntime } from './plugin.js';
+import { kinthaiPlugin, setRuntime, agentRegistry } from './plugin.js';
 import { lastModelInfo } from './messages.js';
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+
+// ── Role context cache for before_prompt_build ──────────────────────────────
+// conversationId → { data, timestamp }
+const roleContextCache = new Map();
+const ROLE_CACHE_TTL = 5 * 60_000; // 5 min fallback TTL
+
+async function getRoleContext(api, conversationId) {
+  const cached = roleContextCache.get(conversationId);
+  if (cached && Date.now() - cached.timestamp < ROLE_CACHE_TTL) {
+    return cached.data;
+  }
+  try {
+    const data = await api.getRoleContext(conversationId);
+    roleContextCache.set(conversationId, { data, timestamp: Date.now() });
+    return data;
+  } catch {
+    return cached?.data || null; // return stale if fetch fails
+  }
+}
+
+// Called by connection.js when role.updated event received
+export function invalidateRoleContext(conversationId) {
+  roleContextCache.delete(conversationId);
+}
+
+function buildRoleContextPrompt(roleCtx, selfPublicId) {
+  const lines = [];
+  lines.push(`[KinthAI Group: ${roleCtx.group_name}]`);
+
+  // Group owner
+  const owner = roleCtx.members?.find(m => m.id === roleCtx.created_by);
+  if (owner) {
+    lines.push(`[Group owner: ${owner.display_name}]`);
+  }
+
+  // My role
+  const self = roleCtx.members?.find(m => m.id === selfPublicId);
+  const myRole = self?.role;
+  if (myRole && roleCtx.roles) {
+    const roleDef = roleCtx.roles.find(r => r.role_id === myRole);
+    const desc = roleDef?.description || '';
+    lines.push(`[Your role: ${roleDef?.name || myRole}${desc ? ' — ' + desc : ''}]`);
+  }
+
+  // Group by role
+  const roled = {};
+  const unroled = [];
+  for (const m of roleCtx.members || []) {
+    if (m.role) {
+      if (!roled[m.role]) roled[m.role] = [];
+      roled[m.role].push(m);
+    } else {
+      unroled.push(m);
+    }
+  }
+
+  const hasRoles = roleCtx.roles && roleCtx.roles.length > 0;
+  if (hasRoles) {
+    const roledCount = Object.values(roled).reduce((sum, arr) => sum + arr.length, 0);
+    lines.push(`[Role Members: ${roledCount}]`);
+    for (const role of roleCtx.roles) {
+      const members = roled[role.role_id] || [];
+      const desc = role.description ? role.description.slice(0, 50) : '';
+      const descLabel = desc ? ` — ${desc}${(role.description || '').length > 50 ? '...' : ''}` : '';
+      const memberLabels = members.map(m => {
+        const you = m.id === selfPublicId ? ' ← you' : '';
+        return `${m.display_name} (${m.type})${you}`;
+      });
+      lines.push(`${role.name}${descLabel}: ${memberLabels.join(', ') || '(none)'}`);
+    }
+    if (unroled.length > 0) {
+      lines.push(`[Other Members: ${unroled.length}]`);
+      for (const m of unroled) {
+        const you = m.id === selfPublicId ? ' ← you' : '';
+        lines.push(`${m.display_name} (${m.type})${you}`);
+      }
+    }
+  } else {
+    lines.push(`[Members: ${(roleCtx.members || []).length}]`);
+    for (const m of roleCtx.members || []) {
+      const you = m.id === selfPublicId ? ' ← you' : '';
+      lines.push(`${m.display_name} (${m.type})${you}`);
+    }
+  }
+
+  return lines.join('\n');
+}
 
 // Prevent concurrent auto-registration for the same agentId
 // 防止同一 agentId 并发自动注册
@@ -40,6 +127,41 @@ export default defineChannelPluginEntry({
     const log = api.logger || console;
     const __dirname = import.meta.dirname ?? path.dirname(fileURLToPath(import.meta.url));
     const tokensFilePath = path.join(__dirname, '..', '.tokens.json');
+
+    // Inject group role context into system prompt
+    // 将群角色信息注入 system prompt
+    api.on('before_prompt_build', async (event) => {
+      try {
+        const sessionKey = event.sessionKey || '';
+        // Extract group conversation ID from session key: agent:xxx:kinthai:group:conv_xxx
+        const groupMatch = sessionKey.match(/:kinthai:group:(.+)$/);
+        if (!groupMatch) return; // DM or non-kinthai session
+
+        const conversationId = groupMatch[1];
+        // Find the agent's API and identity from registry
+        const agentIdMatch = sessionKey.match(/^agent:([^:]+):/);
+        const agentId = agentIdMatch?.[1];
+
+        // Try to find a registered agent to get API access
+        let agentInfo = agentId ? agentRegistry.get(agentId) : null;
+        if (!agentInfo) {
+          // Fallback: use first registered agent's API
+          for (const info of agentRegistry.values()) {
+            agentInfo = info;
+            break;
+          }
+        }
+        if (!agentInfo) return;
+
+        const roleCtx = await getRoleContext(agentInfo.api, conversationId);
+        if (!roleCtx) return;
+
+        const prompt = buildRoleContextPrompt(roleCtx, agentInfo.selfPublicId);
+        return { prependSystemContext: prompt };
+      } catch {
+        return; // fail silently
+      }
+    });
 
     // Capture LLM model info + auto-register new agents
     // 捕获 LLM 模型信息 + 自动注册新 agent

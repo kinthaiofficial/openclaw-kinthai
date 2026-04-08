@@ -254,6 +254,13 @@ export function createConnection(api, state, messageHandler, ctx) {
         return;
       }
 
+      // role.updated → invalidate cached role context
+      if (event.event === 'role.updated' && event.conversation_id) {
+        import('./index.js').then(m => m.invalidateRoleContext(event.conversation_id)).catch(() => {});
+        log?.info?.(`[KK-I027] Role context invalidated — conv=${event.conversation_id}`);
+        return;
+      }
+
       if (event.event !== 'message.new') return;
 
       // Deduplicate — skip if same message_id was recently processed

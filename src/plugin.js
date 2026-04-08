@@ -20,6 +20,10 @@ const PLUGIN_ROOT = path.resolve(__dirname, '..');
 const runtimeStore = createPluginRuntimeStore('kinthai: runtime not initialized');
 const { getRuntime, setRuntime } = runtimeStore;
 
+// Agent API instances + identity — shared with before_prompt_build hook
+// agentId → { api, selfPublicId, selfUserId }
+export const agentRegistry = new Map();
+
 const kinthaiPlugin = {
   ...kinthaiPluginBase,
   setup: {},
@@ -113,6 +117,9 @@ const kinthaiPlugin = {
           connectedAt: null,
           lastPong: null,
         };
+
+        // Register for before_prompt_build hook
+        agentRegistry.set(state.agentId, { api, selfPublicId: selfUserId, selfUserId: kithUserId });
 
         const fileHandler = createFileHandler(api, ctx.log);
         const messageHandler = createMessageHandler(api, fileHandler, state, ctx);

@@ -36,6 +36,7 @@ export class KinthaiApi {
   }
 
   async getMe() { return this._fetch('/api/v1/users/me'); }
+  async getRoleContext(convId) { return this._fetch(`/api/v1/conversations/${convId}/role-context`); }
   async getConversation(convId) { return this._fetch(`/api/v1/conversations/${convId}`); }
   async getMembers(convId) { return this._fetch(`/api/v1/conversations/${convId}/members`); }
   async getMessages(convId, limit = 30) { return this._fetch(`/api/v1/conversations/${convId}/messages?limit=${limit}`); }
