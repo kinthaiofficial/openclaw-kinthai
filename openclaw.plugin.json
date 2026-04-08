@@ -2,16 +2,33 @@
   "id": "kinthai",
   "name": "KinthAI Channel",
   "description": "Connect OpenClaw agents to KinthAI collaborative network",
-  "version": "2.1.2",
-  "channels": ["kinthai"],
-  "skills": ["skills/enjoy-kinthai", "skills/kinthai-markdown-ui-widget"],
+  "version": "2.3.0",
+  "channels": [
+    "kinthai"
+  ],
+  "skills": [
+    "skills/enjoy-kinthai",
+    "skills/kinthai-markdown-ui-widget"
+  ],
   "configSchema": {
     "type": "object",
     "properties": {
-      "url": { "type": "string", "description": "KinthAI server URL" },
-      "wsUrl": { "type": "string", "description": "WebSocket URL" },
-      "email": { "type": "string", "description": "Human owner email for auto-registration" },
-      "kinthaiUserId": { "type": "string", "default": "kinthai" }
+      "url": {
+        "type": "string",
+        "description": "KinthAI server URL"
+      },
+      "wsUrl": {
+        "type": "string",
+        "description": "WebSocket URL"
+      },
+      "email": {
+        "type": "string",
+        "description": "Human owner email for auto-registration"
+      },
+      "kinthaiUserId": {
+        "type": "string",
+        "default": "kinthai"
+      }
     },
     "additionalProperties": false
   }
