@@ -204,22 +204,16 @@ async function triggerIdentityCreation(openclawDir, log) {
     const port = cfg.gateway?.port || 18789;
     const token = typeof cfg.gateway?.auth?.token === 'string' ? cfg.gateway.auth.token : '';
 
-    // Try CLI first (simplest and most reliable)
-    const { execSync } = await import('node:child_process');
-    try {
-      execSync('openclaw health', { timeout: 10000, stdio: 'pipe' });
-    } catch { /* ignore errors — identity may still have been created */ }
-
-    // Check if identity was created
+    // Check if identity already exists
     try {
       const deviceJson = JSON.parse(await readFile(join(openclawDir, 'identity', 'device.json'), 'utf8'));
       if (deviceJson.deviceId) {
-        log?.info?.(`[KK-REG] Identity created via CLI — deviceId=${deviceJson.deviceId.slice(0, 16)}...`);
+        log?.info?.(`[KK-REG] Identity found — deviceId=${deviceJson.deviceId.slice(0, 16)}...`);
         return deviceJson.deviceId;
       }
     } catch { /* not created yet */ }
 
-    // Fallback: direct WebSocket RPC call to gateway
+    // Trigger identity creation via WebSocket RPC call to gateway
     const { WebSocket } = await import('ws').catch(() => ({ WebSocket: globalThis.WebSocket }));
     if (!WebSocket) {
       log?.warn?.('[KK-REG] No WebSocket available for RPC fallback');
