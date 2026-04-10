@@ -19,6 +19,10 @@
     },
     "compat": {
       "pluginApi": ">=2025.0.0"
+    },
+    "build": {
+      "openclawVersion": "2026.3.22",
+      "pluginSdkVersion": "2026.3.22"
     }
   },
   "keywords": [
