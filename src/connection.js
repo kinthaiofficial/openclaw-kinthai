@@ -17,9 +17,10 @@ let _log = null;
 const MAX_CONCURRENT_PER_CONV = 2;     // 每个对话同时处理的 dispatch 数
 const QUEUE_FREEZE_THRESHOLD = 8;      // queue > 8 → freeze
 const QUEUE_THAW_THRESHOLD = 1;        // queue ≤ 1 → thaw
-const DEBOUNCE_MS = 3000;              // 3s quiet → flush
-const MAX_WAIT_MS = 15000;             // force flush after 15s
-const MAX_BATCH = 20;                  // flush immediately if batch reaches this
+const DEBOUNCE_MS = 3000;              // 3s quiet → flush (batch base)
+const MAX_WAIT_MS = 15000;             // force flush after 15s (batch base)
+const MAX_BATCH = 20;                  // flush immediately if batch reaches this (batch base)
+const BASE_CHAR_THRESHOLD = 20000;     // batch char threshold base
 
 // Map<convId, { queue[], active, frozen, waitingForHuman, pending{events[], debounceTimer, forceTimer, flushFn} }>
 const convStates = new Map();
@@ -96,13 +97,22 @@ function checkThaw(convId) {
   }
 }
 
-function addToPending(convId, event, flushFn) {
+function addToPending(convId, event, flushFn, memberCount, maxBatchChars) {
   const s = getConvState(convId);
+
+  // Dynamic thresholds: scale with group member count
+  const scale = Math.max(1, Math.log2(memberCount || 2));
+  const dynamicDebounce = Math.min(Math.round(DEBOUNCE_MS * scale), 30000);
+  const dynamicMaxWait  = Math.min(Math.round(MAX_WAIT_MS * scale), 120000);
+  const dynamicMaxBatch = Math.min(Math.round(MAX_BATCH * scale), 50);
+  const charThreshold   = maxBatchChars || Math.round(BASE_CHAR_THRESHOLD * scale);
+
   if (!s.pending) {
-    s.pending = { events: [], debounceTimer: null, forceTimer: null, flushFn };
+    s.pending = { events: [], totalChars: 0, debounceTimer: null, forceTimer: null, flushFn };
   }
   const p = s.pending;
   p.events.push(event);
+  p.totalChars += (event.content_length || 100);
   p.flushFn = flushFn;
 
   // Frozen → accumulate only, no flush
@@ -113,19 +123,50 @@ function addToPending(convId, event, flushFn) {
     return;
   }
 
+  // Char threshold → immediate flush
+  if (p.totalChars >= charThreshold) {
+    clearTimeout(p.debounceTimer);
+    flushBatch(convId, flushFn);
+    return;
+  }
+
+  // Batch count threshold → immediate flush
+  if (p.events.length >= dynamicMaxBatch) {
+    clearTimeout(p.debounceTimer);
+    flushBatch(convId, flushFn);
+    return;
+  }
+
   // Reset debounce timer
   clearTimeout(p.debounceTimer);
-  p.debounceTimer = setTimeout(() => flushBatch(convId, flushFn), DEBOUNCE_MS);
+  p.debounceTimer = setTimeout(() => flushBatch(convId, flushFn), dynamicDebounce);
 
   // Set force timer if not already set
   if (!p.forceTimer) {
-    p.forceTimer = setTimeout(() => flushBatch(convId, flushFn), MAX_WAIT_MS);
+    p.forceTimer = setTimeout(() => flushBatch(convId, flushFn), dynamicMaxWait);
   }
+}
 
-  // Immediate flush if batch is full
-  if (p.events.length >= MAX_BATCH) {
-    clearTimeout(p.debounceTimer);
-    flushBatch(convId, flushFn);
+/**
+ * Accumulate messages during a delay window (immediate mode with dispatch_delay_ms > 0).
+ * Each new message resets the debounce to delayMs; force timer caps at delayMs * 2.
+ */
+function addToPendingWithDelay(convId, event, delayMs, flushFn) {
+  const s = getConvState(convId);
+  if (!s.pending) {
+    s.pending = { events: [], debounceTimer: null, forceTimer: null, flushFn };
+  }
+  const p = s.pending;
+  p.events.push(event);
+  p.flushFn = flushFn;
+
+  // Each new message resets debounce to the backend-specified delay
+  clearTimeout(p.debounceTimer);
+  p.debounceTimer = setTimeout(() => flushBatch(convId, flushFn), delayMs);
+
+  // Force timer: delay * 2, prevents infinite postponement
+  if (!p.forceTimer) {
+    p.forceTimer = setTimeout(() => flushBatch(convId, flushFn), delayMs * 2);
   }
 }
 
@@ -299,29 +340,77 @@ export function createConnection(api, state, messageHandler, ctx) {
         }
       }
 
-      // Debounce: accumulate per conversation, flush after quiet period
-      // 按 conversation 积攒，静默后批量 flush
-      addToPending(stateKey, event, (batchedEvents) => {
-        // Enqueue the batch into the per-agent per-conversation dispatch queue
-        enqueueDispatch(stateKey, async () => {
-          log?.info?.(
-            `[KK-I026] Dispatch start — agent=${agentTag} conv=${convId} batch=${batchedEvents.length} ` +
-            `queue=${cs.queue.length} active=${cs.active}`,
-          );
-          try {
-            if (batchedEvents.length === 1) {
-              await messageHandler.handleMessageEvent(batchedEvents[0]);
-            } else {
-              await messageHandler.handleMessageEvent(batchedEvents[0], batchedEvents);
-            }
-          } catch (err) {
-            log?.error?.(
-              `[KK-E006] handleMessageEvent uncaught error — conv=${convId} ` +
-              `batch=${batchedEvents.length}: ${err.message}\n${err.stack || ''}`,
-            );
+      // Three-way dispatch: immediate(0) / immediate(delay) / batch
+      // 三路分流：立刻 / 延迟窗口积攒 / 慢积攒
+      const dispatchBatch = async (batchedEvents) => {
+        try {
+          if (batchedEvents.length === 1) {
+            await messageHandler.handleMessageEvent(batchedEvents[0]);
+          } else {
+            await messageHandler.handleMessageEvent(batchedEvents[0], batchedEvents);
           }
-        }).catch(() => {}); // errors already logged above
-      });
+        } catch (err) {
+          log?.error?.(
+            `[KK-E006] handleMessageEvent uncaught error — conv=${convId} ` +
+            `batch=${batchedEvents.length}: ${err.message}\n${err.stack || ''}`,
+          );
+        }
+      };
+
+      if (event.flush === 'immediate') {
+        const delay = event.dispatch_delay_ms || 0;
+
+        if (delay === 0) {
+          // @mentioned or name-matched → flush immediately
+          // If pending messages exist, merge them in for richer context
+          if (cs.pending && cs.pending.events.length > 0) {
+            clearTimeout(cs.pending.debounceTimer);
+            clearTimeout(cs.pending.forceTimer);
+            cs.pending.events.push(event);
+            const batchedEvents = cs.pending.events;
+            cs.pending = null;
+            enqueueDispatch(stateKey, async () => {
+              log?.info?.(
+                `[KK-I026] Immediate flush (pending + @) — agent=${agentTag} conv=${convId} ` +
+                `batch=${batchedEvents.length} msg=${event.message_id}`,
+              );
+              await dispatchBatch(batchedEvents);
+            }).catch(() => {});
+          } else {
+            enqueueDispatch(stateKey, async () => {
+              log?.info?.(
+                `[KK-I026] Immediate dispatch — agent=${agentTag} conv=${convId} ` +
+                `msg=${event.message_id}`,
+              );
+              await dispatchBatch([event]);
+            }).catch(() => {});
+          }
+
+        } else {
+          // Delayed immediate → accumulate during delay window
+          addToPendingWithDelay(stateKey, event, delay, (batchedEvents) => {
+            enqueueDispatch(stateKey, async () => {
+              log?.info?.(
+                `[KK-I026] Delayed dispatch — agent=${agentTag} conv=${convId} ` +
+                `delay=${delay}ms batch=${batchedEvents.length}`,
+              );
+              await dispatchBatch(batchedEvents);
+            }).catch(() => {});
+          });
+        }
+
+      } else {
+        // batch mode or flush=undefined (backward compat with old backend)
+        addToPending(stateKey, event, (batchedEvents) => {
+          enqueueDispatch(stateKey, async () => {
+            log?.info?.(
+              `[KK-I026] Batch dispatch — agent=${agentTag} conv=${convId} ` +
+              `batch=${batchedEvents.length}`,
+            );
+            await dispatchBatch(batchedEvents);
+          }).catch(() => {});
+        }, event.member_count, event.max_batch_chars);
+      }
     };
 
     ws.onclose = (closeEvent) => {
