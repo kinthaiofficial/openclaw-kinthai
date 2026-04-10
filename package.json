@@ -16,6 +16,9 @@
       "id": "kinthai",
       "label": "KinthAI",
       "description": "Connect to KinthAI"
+    },
+    "compat": {
+      "pluginApi": ">=2025.0.0"
     }
   },
   "keywords": [
