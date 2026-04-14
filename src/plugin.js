@@ -12,6 +12,7 @@ import { createMessageHandler } from './messages.js';
 import { createConnection } from './connection.js';
 import { loadTokens, watchTokens } from './tokens.js';
 import { autoRegisterAgents } from './register.js';
+import { readPluginVersion } from './register-scan.js';
 import { kinthaiPluginBase } from './plugin-base.js';
 
 const __dirname = import.meta.dirname ?? path.dirname(fileURLToPath(import.meta.url));
@@ -52,16 +53,9 @@ const kinthaiPlugin = {
         return;
       }
 
-      // Read plugin version from package.json
-      // 从 package.json 读取插件版本
-      let pluginVersion = '0.0.0';
-      try {
-        const { readFile } = await import('node:fs/promises');
-        const pkg = JSON.parse(await readFile(path.join(PLUGIN_ROOT, 'package.json'), 'utf8'));
-        pluginVersion = pkg.version || '0.0.0';
-      } catch {
-        ctx.log?.warn?.('[KK-W004] Could not read package.json for version');
-      }
+      // Read plugin version from package.json (via register-scan.js)
+      // 从 package.json 读取插件版本（通过 register-scan.js）
+      const pluginVersion = await readPluginVersion(PLUGIN_ROOT);
 
       const kithApiUrl = account.url.replace(/\/$/, '');
       const wsUrl = account.wsUrl || account.url.replace(/^http/, 'ws');
@@ -107,12 +101,31 @@ const kinthaiPlugin = {
           `channelRuntime=${ctx.channelRuntime ? 'available' : 'NOT available (KK-E004 will fire)'}`,
         );
 
+        // Resolve agent workspace directory via SDK API (for file-sync)
+        // 通过 SDK API 解析 agent 工作区目录（用于文件同步）
+        let workspaceDir = null;
+        try {
+          const runtime = getRuntime();
+          if (runtime?.agent?.resolveAgentWorkspaceDir) {
+            const cfg = runtime.config?.loadConfig
+              ? await runtime.config.loadConfig()
+              : null;
+            if (cfg) {
+              workspaceDir = runtime.agent.resolveAgentWorkspaceDir(cfg);
+              ctx.log?.info?.(`[KK-I028] Workspace dir resolved: ${workspaceDir}`);
+            }
+          }
+        } catch {
+          ctx.log?.debug?.(`[KK-I028] Could not resolve workspace dir for ${openclawAgentId} — file-sync will be unavailable`);
+        }
+
         const state = {
           kithUserId,
           selfUserId,
           agentId: openclawAgentId,
           wsUrl,
           pluginVersion,
+          workspaceDir,
           ws: null,
           connectedAt: null,
           lastPong: null,

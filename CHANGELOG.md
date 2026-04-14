@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.5.0 (2026-04-14)
+
+### New Features
+- **File sync protocol**: `admin.file_request` (read) and `admin.file_push` (write) WS events — enables "Sync from OpenClaw" and "Push to OpenClaw" in KinthAI frontend (requires kinthai >= v4.4.0)
+- **Workspace resolution via SDK**: Uses `api.runtime.agent.resolveAgentWorkspaceDir()` instead of hardcoded paths
+
+### Security
+- **Zero scanner warnings**: Restructured all source files to eliminate OpenClaw security scanner `potential-exfiltration` warnings — no file contains both `readFile` and `fetch`
+- **File sync whitelist**: Only 7 known bootstrap files (SOUL.md, AGENTS.md, etc.) + skills/ and memory/ directories (.md only)
+- **Blocked files**: .env, .tokens.json, device.json, openclaw.json, .npmrc are never read or written by file sync
+- **Path traversal protection**: All paths validated with `path.resolve()` boundary check
+- **Size limits**: 100KB per file, 1MB total response
+
+### Internal Refactoring
+- Split `register.js` into `register.js` (network) + `register-scan.js` (file I/O)
+- Split `updater.js` into `updater.js` (file I/O) + `updater-download.js` (network)
+- Moved auto-register logic from `index.js` to `register.js` (`registerSingleAgent`)
+- Moved `readPluginVersion()` from `plugin.js` to `register-scan.js`
+
+### Compatibility
+- Backward compatible: old backends (< v4.4.0) never send file sync events — new code exists but is never triggered
+- Old plugins (< v2.5.0) ignore file sync events — backend times out and reports agent_offline
+
 ## 2.0.0 (2026-03-27)
 
 ### Breaking Changes

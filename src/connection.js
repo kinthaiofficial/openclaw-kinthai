@@ -286,6 +286,50 @@ export function createConnection(api, state, messageHandler, ctx) {
         return;
       }
 
+      // admin.file_request → delegate to file-sync (read agent workspace files)
+      // admin.file_request → 委派给 file-sync（读取 agent 工作区文件）
+      if (event.event === 'admin.file_request') {
+        import('./file-sync.js').then(m => {
+          const workspaceDir = state.workspaceDir;
+          if (!workspaceDir) {
+            log?.warn?.('[KK-SYNC] workspaceDir not set — cannot handle file_request');
+            ws.send(JSON.stringify({
+              event: 'admin.file_response',
+              request_id: event.request_id,
+              files: [],
+              errors: [{ path: '*', error: 'workspace_not_available' }],
+            }));
+            return;
+          }
+          m.handleFileRequest(event, workspaceDir, ws, log);
+        }).catch(err => {
+          log?.error?.(`[KK-E008] Failed to load file-sync.js: ${err.message}`);
+        });
+        return;
+      }
+
+      // admin.file_push → delegate to file-sync (write files to agent workspace)
+      // admin.file_push → 委派给 file-sync（写入文件到 agent 工作区）
+      if (event.event === 'admin.file_push') {
+        import('./file-sync.js').then(m => {
+          const workspaceDir = state.workspaceDir;
+          if (!workspaceDir) {
+            log?.warn?.('[KK-SYNC] workspaceDir not set — cannot handle file_push');
+            ws.send(JSON.stringify({
+              event: 'admin.file_push_ack',
+              request_id: event.request_id,
+              results: [],
+              errors: [{ path: '*', error: 'workspace_not_available' }],
+            }));
+            return;
+          }
+          m.handleFilePush(event, workspaceDir, ws, log);
+        }).catch(err => {
+          log?.error?.(`[KK-E008] Failed to load file-sync.js: ${err.message}`);
+        });
+        return;
+      }
+
       // admin.command → delegate to updater (dynamic import for hot-reload)
       // admin.command → 委派给 updater（动态 import 支持热更新）
       if (event.event === 'admin.command') {
