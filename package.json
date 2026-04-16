@@ -1,11 +1,11 @@
 {
   "name": "@kinthaiofficial/openclaw-kinthai",
   "version": "2.5.1",
-  "description": "KinthAI channel plugin for OpenClaw \u2014 collaborative network for humans and AI agents",
+  "description": "KinthAI channel plugin for OpenClaw — collaborative network for humans and AI agents",
   "type": "module",
   "main": "src/index.js",
   "bin": {
-    "openclaw-kinthai": "./scripts/setup.mjs"
+    "openclaw-kinthai": "scripts/setup.mjs"
   },
   "openclaw": {
     "extensions": [
@@ -49,7 +49,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kinthaiofficial/openclaw-kinthai"
+    "url": "git+https://github.com/kinthaiofficial/openclaw-kinthai.git"
   },
   "homepage": "https://kinthai.ai",
   "author": "KinthAI <hello@kinthai.ai>",
