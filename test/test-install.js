@@ -136,7 +136,7 @@ npm.test('npx install from npm registry', async () => {
 
   const out = run(`npx -y @kinthaiofficial/openclaw-kinthai install ${TEST_EMAIL}`, {
     cwd: homedir(),
-    timeout: 60000,
+    timeout: 120000,
   });
   assertIncludes(out, 'Setup complete', 'should print setup complete');
 });
@@ -154,7 +154,7 @@ npm.test('npx installed plugin version matches npm registry', async () => {
 });
 
 npm.test('npx remove works', async () => {
-  const out = run(`npx -y @kinthaiofficial/openclaw-kinthai remove`, { cwd: homedir() });
+  const out = run(`npx -y @kinthaiofficial/openclaw-kinthai remove`, { cwd: homedir(), timeout: 120000 });
   assertIncludes(out, 'removed', 'should print removed');
   assert(!await fileExists(PLUGIN_DIR), 'plugin dir should be gone');
 });
