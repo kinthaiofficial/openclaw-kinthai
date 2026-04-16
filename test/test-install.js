@@ -180,6 +180,69 @@ npm.test('remove.mjs from npm package uninstalls plugin', async () => {
   assert(!await fileExists(PLUGIN_DIR), 'plugin dir should be gone');
 });
 
+// ── ClawHub install tests ────────────────────────────────────────────────────
+
+const EXTENSIONS_DIR = join(OPENCLAW_DIR, 'extensions', 'kinthai');
+
+const clawhub = new TestRunner('ClawHub Install Tests');
+
+async function cleanPluginAll() {
+  // Clean both possible install locations
+  await cleanPlugin();
+  await rm(EXTENSIONS_DIR, { recursive: true, force: true });
+}
+
+clawhub.test('clawhub install from registry', async () => {
+  await cleanPluginAll();
+
+  const out = run(
+    `openclaw plugins install "clawhub:@kinthaiofficial/openclaw-kinthai" --force`,
+    { timeout: 120000 },
+  );
+  assertIncludes(out, 'Installed plugin: kinthai', 'should confirm installation');
+});
+
+clawhub.test('clawhub installs to extensions/kinthai', async () => {
+  assert(await fileExists(EXTENSIONS_DIR), 'extensions/kinthai should exist');
+  assert(await fileExists(join(EXTENSIONS_DIR, 'src', 'plugin.js')), 'plugin.js should exist');
+  assert(await fileExists(join(EXTENSIONS_DIR, 'openclaw.plugin.json')), 'manifest should exist');
+  assert(await fileExists(join(EXTENSIONS_DIR, 'package.json')), 'package.json should exist');
+});
+
+clawhub.test('clawhub version matches npm latest', async () => {
+  const npmVersion = run('npm view @kinthaiofficial/openclaw-kinthai version');
+  const pkg = JSON.parse(await readFile(join(EXTENSIONS_DIR, 'package.json'), 'utf8'));
+  assertEqual(pkg.version, npmVersion, 'clawhub version should match npm');
+});
+
+clawhub.test('clawhub sets plugins.entries but NOT channels.kinthai.email', async () => {
+  const cfg = JSON.parse(await readFile(CONFIG_PATH, 'utf8'));
+  assert(cfg.plugins?.entries?.kinthai?.enabled === true, 'plugin should be enabled');
+  // ClawHub does NOT inject email — this is the known gap
+  const email = cfg.channels?.kinthai?.email;
+  assert(!email, 'email should NOT be set by clawhub install (known gap)');
+});
+
+clawhub.test('clawhub source files match npm package', async () => {
+  // Verify key source files are present and non-empty
+  const files = ['api.js', 'connection.js', 'plugin.js', 'register.js', 'register-scan.js'];
+  for (const f of files) {
+    const path = join(EXTENSIONS_DIR, 'src', f);
+    assert(await fileExists(path), `${f} should exist`);
+    const content = await readFile(path, 'utf8');
+    assert(content.length > 100, `${f} should not be empty`);
+  }
+});
+
+clawhub.test('clawhub reinstall with --force overwrites cleanly', async () => {
+  const out = run(
+    `openclaw plugins install "clawhub:@kinthaiofficial/openclaw-kinthai" --force`,
+    { timeout: 120000 },
+  );
+  assertIncludes(out, 'Installed plugin: kinthai', 'reinstall should succeed');
+  assert(await fileExists(EXTENSIONS_DIR), 'extensions/kinthai should still exist');
+});
+
 // ── Run ──────────────────────────────────────────────────────────────────────
 
 let allPassed = true;
@@ -198,6 +261,10 @@ if (mode === 'all' || mode === 'remove') {
 
 if (mode === 'all' || mode === 'npm') {
   if (!await npm.run()) allPassed = false;
+}
+
+if (mode === 'all' || mode === 'clawhub') {
+  if (!await clawhub.run()) allPassed = false;
 }
 
 process.exit(allPassed ? 0 : 1);
