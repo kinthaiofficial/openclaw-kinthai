@@ -17,7 +17,7 @@
  *   node test/test-install.js all       # test all (default)
  */
 
-import { readFile, stat, rm, readdir } from 'node:fs/promises';
+import { readFile, stat, rm, readdir, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { execSync } from 'node:child_process';
@@ -131,30 +131,51 @@ remove.test('reinstall after remove works', async () => {
 
 const npm = new TestRunner('npm/npx Install Tests');
 
-npm.test('npx install from npm registry', async () => {
-  await cleanPlugin();
+// Pre-install the package globally to avoid npx download timeout on slow networks
+const NPM_PKG_DIR = join(homedir(), '.npm-plugin-test');
 
-  const out = run(`npx -y @kinthaiofficial/openclaw-kinthai install ${TEST_EMAIL}`, {
-    cwd: homedir(),
-    timeout: 120000,
+npm.test('npm install package from registry', async () => {
+  await cleanPlugin();
+  await rm(NPM_PKG_DIR, { recursive: true, force: true }).catch(() => {});
+  await mkdir(NPM_PKG_DIR, { recursive: true });
+
+  // Install to a temp dir — faster than npx which re-downloads every time
+  run(`npm install @kinthaiofficial/openclaw-kinthai@latest`, {
+    cwd: NPM_PKG_DIR,
+    timeout: 180000,
+  });
+
+  const pkgDir = join(NPM_PKG_DIR, 'node_modules', '@kinthaiofficial', 'openclaw-kinthai');
+  assert(await fileExists(pkgDir), 'package should be installed');
+});
+
+npm.test('setup.mjs from npm package installs plugin', async () => {
+  const pkgDir = join(NPM_PKG_DIR, 'node_modules', '@kinthaiofficial', 'openclaw-kinthai');
+  const out = run(`node ${join(pkgDir, 'scripts', 'setup.mjs')} install ${TEST_EMAIL}`, {
+    cwd: pkgDir,
+    timeout: 30000,
   });
   assertIncludes(out, 'Setup complete', 'should print setup complete');
 });
 
-npm.test('npx installed plugin has correct files', async () => {
+npm.test('npm installed plugin has correct files', async () => {
   assert(await fileExists(PLUGIN_DIR), 'plugin dir should exist');
   assert(await fileExists(join(PLUGIN_DIR, 'src', 'plugin.js')), 'plugin.js should exist');
   assert(await fileExists(join(PLUGIN_DIR, 'openclaw.plugin.json')), 'manifest should exist');
 });
 
-npm.test('npx installed plugin version matches npm registry', async () => {
+npm.test('npm installed plugin version matches registry', async () => {
   const npmVersion = run('npm view @kinthaiofficial/openclaw-kinthai version');
   const installedPkg = JSON.parse(await readFile(join(PLUGIN_DIR, 'package.json'), 'utf8'));
   assertEqual(installedPkg.version, npmVersion, 'installed version should match npm');
 });
 
-npm.test('npx remove works', async () => {
-  const out = run(`npx -y @kinthaiofficial/openclaw-kinthai remove`, { cwd: homedir(), timeout: 120000 });
+npm.test('remove.mjs from npm package uninstalls plugin', async () => {
+  const pkgDir = join(NPM_PKG_DIR, 'node_modules', '@kinthaiofficial', 'openclaw-kinthai');
+  const out = run(`node ${join(pkgDir, 'scripts', 'remove.mjs')}`, {
+    cwd: pkgDir,
+    timeout: 30000,
+  });
   assertIncludes(out, 'removed', 'should print removed');
   assert(!await fileExists(PLUGIN_DIR), 'plugin dir should be gone');
 });
