@@ -142,7 +142,7 @@ npm.test('npm install package from registry', async () => {
   // Install to a temp dir — faster than npx which re-downloads every time
   run(`npm install @kinthaiofficial/openclaw-kinthai@latest`, {
     cwd: NPM_PKG_DIR,
-    timeout: 180000,
+    timeout: 300000,
   });
 
   const pkgDir = join(NPM_PKG_DIR, 'node_modules', '@kinthaiofficial', 'openclaw-kinthai');
