@@ -8,7 +8,7 @@
  * Separated to avoid OpenClaw security scanner "potential-exfiltration" warning.
  */
 
-import { scanLocalState, saveTokensData } from './register-scan.js';
+import { scanLocalState, saveTokensData, getMachineId } from './register-scan.js';
 
 /**
  * Auto-register all agents on this OpenClaw instance with KinthAI.
@@ -26,7 +26,7 @@ export async function autoRegisterAgents(kinthaiUrl, email, tokensFilePath, log)
   const localState = await scanLocalState(tokensFilePath, log);
   if (!localState) return null;
 
-  const { machineId, agentIds } = localState;
+  const { openclawDir, agentIds } = localState;
   let { tokensData } = localState;
 
   if (agentIds.length === 0) {
@@ -36,11 +36,21 @@ export async function autoRegisterAgents(kinthaiUrl, email, tokensFilePath, log)
 
   let registered = 0;
   let skipped = 0;
+  let machineId = null;  // lazy — only fetched when needed
 
   for (const agentId of agentIds) {
     if (tokensData[agentId]) {
       skipped++;
       continue;
+    }
+
+    // Lazily obtain machineId on first actual registration
+    if (!machineId) {
+      machineId = await getMachineId(openclawDir, log);
+      if (!machineId) {
+        log?.warn?.('[KK-REG] Cannot register — machineId unavailable (gateway not running?)');
+        break;
+      }
     }
 
     try {
@@ -92,7 +102,7 @@ export async function autoRegisterAgents(kinthaiUrl, email, tokensFilePath, log)
 
   // Save tokens with metadata
   if (registered > 0 || !tokensData._machine_id) {
-    tokensData._machine_id = machineId;
+    if (machineId) tokensData._machine_id = machineId;
     tokensData._email = email;
     tokensData._kinthai_url = kinthaiUrl;
     await saveTokensData(tokensFilePath, tokensData);
@@ -123,7 +133,7 @@ export async function autoRegisterAgents(kinthaiUrl, email, tokensFilePath, log)
  * @returns {object|null} { api_key, kk_agent_id } or null
  */
 export async function registerSingleAgent(agentId, tokensFilePath, log) {
-  const { loadTokensData } = await import('./register-scan.js');
+  const { loadTokensData, getMachineId: getMId } = await import('./register-scan.js');
   let tokensData;
   try {
     tokensData = await loadTokensData(tokensFilePath);
@@ -131,10 +141,18 @@ export async function registerSingleAgent(agentId, tokensFilePath, log) {
 
   if (tokensData[agentId]) return null; // already registered
 
-  const machineId = tokensData._machine_id;
   const email = tokensData._email;
   const kinthaiUrl = tokensData._kinthai_url;
-  if (!machineId || !email || !kinthaiUrl) return null;
+  if (!email || !kinthaiUrl) return null;
+
+  // Resolve machineId: try cached value first, then live query
+  let machineId = tokensData._machine_id;
+  if (!machineId) {
+    const { scanLocalState: scan } = await import('./register-scan.js');
+    const state = await scan(tokensFilePath, log);
+    if (state?.openclawDir) machineId = await getMId(state.openclawDir, log);
+  }
+  if (!machineId) return null;
 
   try {
     log?.info?.(`[KK-I018] Auto-registering new agent "${agentId}" with KinthAI`);

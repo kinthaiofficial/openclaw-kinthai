@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.5.1 (2026-04-16)
+
+### Improvements
+- **Lazy machineId acquisition**: `scanLocalState()` no longer fetches deviceId — deferred to actual registration time via new `getMachineId()`. Already-registered agents (with cached tokens) start without needing gateway online. Fixes startup failure when plugin loads before gateway is ready.
+
 ## 2.5.0 (2026-04-14)
 
 ### New Features

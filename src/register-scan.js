@@ -2,8 +2,10 @@
  * Local filesystem scan for OpenClaw agent registration.
  * 本地文件系统扫描，为 agent 注册提供数据。
  *
- * This module only reads local files — no network calls.
- * 此模块只读取本地文件 — 不做网络请求。
+ * Mostly local file reads. The one exception is getMachineId() which may
+ * call the local OpenClaw gateway via WebSocket RPC (localhost only).
+ * 主要是本地文件读取。唯一例外是 getMachineId()，可能通过 WebSocket RPC
+ * 调用本地 OpenClaw gateway（仅 localhost）。
  *
  * Separated from register.js to avoid OpenClaw security scanner
  * "potential-exfiltration" warning (file-read + network-send in same file).
@@ -14,12 +16,15 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 
 /**
- * Scan the local OpenClaw instance and return everything needed for registration.
- * 扫描本地 OpenClaw 实例，返回注册所需的全部数据。
+ * Scan the local OpenClaw instance and return local state (no network calls).
+ * 扫描本地 OpenClaw 实例，返回本地状态（不做网络请求）。
+ *
+ * machineId is NOT included — use getMachineId() when actually needed (e.g. at registration time).
+ * 不包含 machineId — 需要时（如注册时）调用 getMachineId() 获取。
  *
  * @param {string} tokensFilePath - Path to .tokens.json
  * @param {object} log - Logger
- * @returns {{ openclawDir, machineId, tokensData, agentIds } | null}
+ * @returns {{ openclawDir, tokensData, agentIds } | null}
  */
 export async function scanLocalState(tokensFilePath, log) {
   // Resolve OpenClaw directory
@@ -36,21 +41,6 @@ export async function scanLocalState(tokensFilePath, log) {
     return null;
   }
 
-  // Read machine ID
-  let machineId;
-  try {
-    const deviceJson = JSON.parse(await readFile(join(openclawDir, 'identity', 'device.json'), 'utf8'));
-    machineId = deviceJson.deviceId;
-  } catch {
-    log?.info?.('[KK-REG] identity/device.json not found, triggering creation via gateway RPC...');
-    machineId = await triggerIdentityCreation(openclawDir, log);
-  }
-
-  if (!machineId) {
-    log?.warn?.('[KK-REG] Could not obtain deviceId — gateway may not be running');
-    return null;
-  }
-
   // Load existing tokens
   let tokensData = {};
   try {
@@ -62,7 +52,34 @@ export async function scanLocalState(tokensFilePath, log) {
   // Scan agents
   const agentIds = await scanAgents(openclawDir, log);
 
-  return { openclawDir, machineId, tokensData, agentIds };
+  return { openclawDir, tokensData, agentIds };
+}
+
+/**
+ * Get machine ID from OpenClaw identity system (may involve gateway RPC).
+ * 从 OpenClaw identity 系统获取机器 ID（可能需要 gateway RPC）。
+ *
+ * Call this lazily — only when you actually need to register an agent.
+ * 惰性调用 — 只在真正需要注册 agent 时才调用。
+ *
+ * @param {string} openclawDir - OpenClaw directory path
+ * @param {object} log - Logger
+ * @returns {string|null} deviceId or null if unavailable
+ */
+export async function getMachineId(openclawDir, log) {
+  try {
+    const deviceJson = JSON.parse(await readFile(join(openclawDir, 'identity', 'device.json'), 'utf8'));
+    if (deviceJson.deviceId) return deviceJson.deviceId;
+  } catch {
+    // not on disk yet
+  }
+
+  log?.info?.('[KK-REG] identity/device.json not found, triggering creation via gateway RPC...');
+  const machineId = await triggerIdentityCreation(openclawDir, log);
+  if (!machineId) {
+    log?.warn?.('[KK-REG] Could not obtain deviceId — gateway may not be running');
+  }
+  return machineId || null;
 }
 
 /**
