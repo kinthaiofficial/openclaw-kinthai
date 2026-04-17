@@ -113,18 +113,26 @@ async function cmdInstall(email) {
 
   console.log(`\n${bold('KinthAI Plugin Installer')}\n`);
 
-  // 1. Pack + install via openclaw (extensions/kinthai/).
-  // Use npm pack so openclaw only sees files[] — avoids scanning node_modules/test.
-  // 先 npm pack，只把 files[] 声明的文件打成 tgz，避免扫 node_modules/test 目录。
-  step('Packing plugin...');
+  // 1. Stage + pack + install via openclaw (extensions/kinthai/).
+  //    Stage to a clean dir WITHOUT scripts/ (which contains child_process that
+  //    trips openclaw's code scanner). openclaw only needs the runtime files.
+  // 2. 打包到 tgz 只带 src/skills/manifests（不带 scripts/），让 openclaw 扫描过关
+  step('Staging runtime files for install...');
   const tmpDir = execFileSync('mktemp', ['-d'], { encoding: 'utf8' }).trim();
-  let tgzPath;
   try {
+    const stageDir = `${tmpDir}/stage`;
+    execFileSync('mkdir', ['-p', stageDir]);
+    // Copy only runtime files (exclude scripts/, test/, docs/, node_modules/)
+    for (const p of ['src', 'skills', 'setup-entry.js', 'openclaw.plugin.json',
+                     'package.json', 'README.md', 'README.zh.md', 'CHANGELOG.md', 'LICENSE']) {
+      try { execFileSync('cp', ['-r', `${PKG_ROOT}/${p}`, `${stageDir}/`]); } catch {}
+    }
+    step('Packing plugin...');
     const packOut = execFileSync('npm', ['pack', '--silent', '--pack-destination', tmpDir], {
-      cwd: PKG_ROOT,
+      cwd: stageDir,
       encoding: 'utf8',
     }).trim();
-    tgzPath = `${tmpDir}/${packOut.split('\n').pop()}`;
+    const tgzPath = `${tmpDir}/${packOut.split('\n').pop()}`;
     step('Installing plugin via openclaw plugins install...');
     runOC(['plugins', 'install', tgzPath, '--force']);
     ok('Plugin installed');
@@ -157,12 +165,18 @@ async function cmdUpdate() {
   step('Updating plugin via openclaw plugins update...');
   const out = runOC(['plugins', 'update', 'kinthai'], { allowFail: true });
   if (out === null) {
-    // Fallback: pack + reinstall (avoids scanning node_modules)
+    // Fallback: stage + pack + reinstall (same as install)
     step('Update command unavailable, reinstalling from package...');
     const tmpDir = execFileSync('mktemp', ['-d'], { encoding: 'utf8' }).trim();
     try {
+      const stageDir = `${tmpDir}/stage`;
+      execFileSync('mkdir', ['-p', stageDir]);
+      for (const p of ['src', 'skills', 'setup-entry.js', 'openclaw.plugin.json',
+                       'package.json', 'README.md', 'README.zh.md', 'CHANGELOG.md', 'LICENSE']) {
+        try { execFileSync('cp', ['-r', `${PKG_ROOT}/${p}`, `${stageDir}/`]); } catch {}
+      }
       const packOut = execFileSync('npm', ['pack', '--silent', '--pack-destination', tmpDir], {
-        cwd: PKG_ROOT,
+        cwd: stageDir,
         encoding: 'utf8',
       }).trim();
       const tgzPath = `${tmpDir}/${packOut.split('\n').pop()}`;
