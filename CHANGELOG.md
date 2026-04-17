@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.6.3 (2026-04-17)
+
+### Internal
+- Remove `scripts/publish-clawhub.sh` (maintainer-only release script) from the package. It was being bundled into the npm tarball via a directory glob (`scripts/` in `files[]`) even though end users never invoke it. Moved to the private maintainer companion; not shipped.
+- Convert `files[]` in `package.json` from directory globs to an explicit per-file allowlist. New files added under `src/` or `scripts/` no longer ship implicitly — they must be added to `files[]` deliberately.
+- Add `prepublishOnly` hook (`scripts/check-publish-allowlist.mjs` + `scripts/publish-allowlist.json`) that compares the actual tarball contents against a frozen expected list and aborts `npm publish` on any drift.
+
 ## 2.6.2 (2026-04-17)
 
 ### Docs

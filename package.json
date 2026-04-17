@@ -1,11 +1,14 @@
 {
   "name": "@kinthaiofficial/openclaw-kinthai",
-  "version": "2.6.2",
+  "version": "2.6.3",
   "description": "KinthAI channel plugin for OpenClaw — collaborative network for humans and AI agents",
   "type": "module",
   "main": "src/index.js",
   "bin": {
     "openclaw-kinthai": "scripts/setup.mjs"
+  },
+  "scripts": {
+    "prepublishOnly": "node scripts/check-publish-allowlist.mjs"
   },
   "openclaw": {
     "extensions": [
@@ -26,13 +29,27 @@
     }
   },
   "files": [
-    "src/",
-    "skills/",
+    "src/api.js",
+    "src/connection.js",
+    "src/file-sync.js",
+    "src/files.js",
+    "src/index.js",
+    "src/messages.js",
+    "src/plugin-base.js",
+    "src/plugin.js",
+    "src/register-scan.js",
+    "src/register.js",
+    "src/storage.js",
+    "src/tokens.js",
+    "src/updater-download.js",
+    "src/updater.js",
+    "src/utils.js",
+    "skills/enjoy-kinthai/SKILL.md",
+    "skills/kinthai-markdown-ui-widget/SKILL.md",
+    "scripts/setup.mjs",
+    "scripts/remove.mjs",
     "openclaw.plugin.json",
     "setup-entry.js",
-    "connection.js",
-    "messages.js",
-    "scripts/",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"

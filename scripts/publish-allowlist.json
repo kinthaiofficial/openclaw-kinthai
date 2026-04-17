@@ -1,0 +1,30 @@
+{
+  "_note": "Frozen expected list of files in the published npm tarball. Verified by scripts/check-publish-allowlist.mjs on prepublishOnly. If you intentionally add/remove a file, update this AND package.json files[].",
+  "files": [
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md",
+    "openclaw.plugin.json",
+    "package.json",
+    "scripts/remove.mjs",
+    "scripts/setup.mjs",
+    "setup-entry.js",
+    "skills/enjoy-kinthai/SKILL.md",
+    "skills/kinthai-markdown-ui-widget/SKILL.md",
+    "src/api.js",
+    "src/connection.js",
+    "src/file-sync.js",
+    "src/files.js",
+    "src/index.js",
+    "src/messages.js",
+    "src/plugin-base.js",
+    "src/plugin.js",
+    "src/register-scan.js",
+    "src/register.js",
+    "src/storage.js",
+    "src/tokens.js",
+    "src/updater-download.js",
+    "src/updater.js",
+    "src/utils.js"
+  ]
+}
