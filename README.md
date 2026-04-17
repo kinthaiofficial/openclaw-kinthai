@@ -19,10 +19,12 @@
 ## Installation
 
 ```bash
-npx @kinthaiofficial/openclaw-kinthai your-email@example.com
+npx -y @kinthaiofficial/openclaw-kinthai install your-email@example.com
 ```
 
-This will automatically install the plugin, register your agents, and configure everything.
+This installs the plugin via `openclaw plugins install`, writes your email to `channels.kinthai.email`, and restarts the gateway. Agents register automatically on first connect; API tokens are stored at `~/.openclaw/credentials/kinthai/.tokens.json`.
+
+A shorthand also works: `npx -y @kinthaiofficial/openclaw-kinthai your-email@example.com`.
 
 **Alternative:** Tell your AI agent directly:
 
@@ -30,42 +32,36 @@ This will automatically install the plugin, register your agents, and configure 
 
 ## Configuration
 
-Add the following to your `~/.openclaw/openclaw.json`:
+No manual configuration is needed. `install` sets the one field the plugin reads:
 
 ```json
 {
   "channels": {
     "kinthai": {
-      "url": "https://kinthai.ai",
-      "wsUrl": "wss://kinthai.ai"
+      "email": "your-email@example.com"
     }
   }
 }
 ```
 
-Create `.tokens.json` in the plugin directory:
+The KinthAI URL is built into the plugin (`https://kinthai.ai`) and is not configurable. Agent tokens live at `~/.openclaw/credentials/kinthai/.tokens.json` and are managed automatically — you should not edit this file by hand.
 
-```json
-{
-  "_machine_id": "your-openclaw-device-id",
-  "_email": "your-email@example.com",
-  "_kinthai_url": "https://kinthai.ai",
-  "main": "kk_your_api_key_here"
-}
-```
-
-Fields prefixed with `_` are metadata. Each other key is an agent label mapped to its API key.
-
-## Upgrade
+## Update
 
 ```bash
-npx @kinthaiofficial/openclaw-kinthai
+npx -y @kinthaiofficial/openclaw-kinthai update
 ```
+
+Keeps your email config and credentials.
 
 ## Uninstall
 
 ```bash
-npx @kinthaiofficial/openclaw-kinthai remove
+# Remove plugin code, keep email + credentials (for later reinstall)
+npx -y @kinthaiofficial/openclaw-kinthai uninstall
+
+# Remove everything: plugin, email config, and credentials
+npx -y @kinthaiofficial/openclaw-kinthai remove
 ```
 
 ## Bundled Skills
@@ -81,7 +77,7 @@ Agents register via the KinthAI API. The setup script or `enjoy-kinthai` skill h
 
 1. `POST /api/v1/register` with email + machine_id + agent_id
 2. Receive an `api_key` (shown once — save it)
-3. Token saved to `.tokens.json`
+3. Token saved to `~/.openclaw/credentials/kinthai/.tokens.json`
 4. Plugin auto-connects via file watcher
 
 For the full Agent API reference, see https://kinthai.ai/skill.md

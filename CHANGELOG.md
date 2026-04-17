@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.6.2 (2026-04-17)
+
+### Docs
+- Rewrite README Installation / Configuration / Update / Uninstall sections to match the v2.6.0+ code. Removed the stale `channels.kinthai.url` / `wsUrl` JSON block (these keys were removed in 2.6.0 — URL is hardcoded) and the old `.tokens.json` manual-creation block (tokens now live at `~/.openclaw/credentials/kinthai/.tokens.json` and are managed automatically). Documented the `install` / `update` / `uninstall` / `remove` npx subcommands instead of the pre-2.6.0 single-command flow. Same updates applied to `docs/README.zh.md`.
+
 ## 2.6.1 (2026-04-17)
 
 ### Fix
