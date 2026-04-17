@@ -51,18 +51,48 @@ async function writeJson(p, data) {
   await writeFile(p, JSON.stringify(data, null, 2));
 }
 
+async function ensureValidConfig() {
+  // Guarantee openclaw.json is valid JSON with required base fields.
+  // Recovers from corruption (empty file, bad JSON, missing file).
+  let cfg;
+  try {
+    const content = await readFile(CONFIG_PATH, 'utf8');
+    if (!content.trim()) throw new Error('empty');
+    cfg = JSON.parse(content);
+  } catch {
+    // Try backups
+    for (const bak of ['openclaw.json.bak', 'openclaw.json.bak.1', 'openclaw.json.bak.2']) {
+      try {
+        const bakPath = join(OPENCLAW_DIR, bak);
+        const content = await readFile(bakPath, 'utf8');
+        if (content.trim()) {
+          cfg = JSON.parse(content);
+          break;
+        }
+      } catch { /* try next */ }
+    }
+  }
+  if (!cfg) {
+    // Last resort: minimal valid config
+    cfg = {
+      gateway: { mode: 'local', auth: { mode: 'token', token: 'test-token' }, port: 18820, bind: 'loopback' },
+      plugins: { entries: {}, allow: [], load: { paths: [] } },
+    };
+  }
+  return cfg;
+}
+
 async function cleanAll() {
   await rm(CHANNELS_DIR, { recursive: true, force: true });
   await rm(EXTENSIONS_DIR, { recursive: true, force: true });
-  // Clean config channels + plugins sections
-  try {
-    const cfg = await readJson(CONFIG_PATH);
-    delete cfg.channels?.kinthai;
-    if (cfg.plugins?.entries?.kinthai) delete cfg.plugins.entries.kinthai;
-    if (cfg.plugins?.allow) cfg.plugins.allow = cfg.plugins.allow.filter(x => x !== 'kinthai');
-    if (cfg.plugins?.load?.paths) cfg.plugins.load.paths = cfg.plugins.load.paths.filter(x => !x.includes('kinthai'));
-    await writeJson(CONFIG_PATH, cfg);
-  } catch { /* ok */ }
+
+  const cfg = await ensureValidConfig();
+  if (cfg.channels?.kinthai) delete cfg.channels.kinthai;
+  if (cfg.plugins?.entries?.kinthai) delete cfg.plugins.entries.kinthai;
+  if (cfg.plugins?.installs?.kinthai) delete cfg.plugins.installs.kinthai;
+  if (cfg.plugins?.allow) cfg.plugins.allow = cfg.plugins.allow.filter(x => x !== 'kinthai');
+  if (cfg.plugins?.load?.paths) cfg.plugins.load.paths = cfg.plugins.load.paths.filter(x => !x.includes('kinthai'));
+  await writeJson(CONFIG_PATH, cfg);
 }
 
 // Get an older published version from npm for upgrade testing
