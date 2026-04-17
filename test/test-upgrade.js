@@ -76,18 +76,24 @@ async function getPreviousVersion() {
 const setupUpgrade = new TestRunner('setup.mjs Upgrade Tests');
 
 const NPM_WORK_DIR = join(homedir(), '.npm-upgrade-work');
+const OLD_VER_DIR = join(NPM_WORK_DIR, 'old');    // v2.5.0
+const NEW_VER_DIR = join(NPM_WORK_DIR, 'new');    // latest
 
 setupUpgrade.test('install old version (v2.5.0) via npm', async () => {
   await cleanAll();
-  await rm(NPM_WORK_DIR, { recursive: true, force: true }).catch(() => {});
-  await mkdir(NPM_WORK_DIR, { recursive: true });
 
-  run(`npm install @kinthaiofficial/openclaw-kinthai@2.5.0`, {
-    cwd: NPM_WORK_DIR,
-    timeout: 300000,
-  });
+  // Only do full install if dir doesn't exist (reuse across runs to save disk)
+  const oldPkg = join(OLD_VER_DIR, 'node_modules', '@kinthaiofficial', 'openclaw-kinthai', 'package.json');
+  if (!await fileExists(oldPkg)) {
+    await rm(OLD_VER_DIR, { recursive: true, force: true }).catch(() => {});
+    await mkdir(OLD_VER_DIR, { recursive: true });
+    run(`npm install @kinthaiofficial/openclaw-kinthai@2.5.0`, {
+      cwd: OLD_VER_DIR,
+      timeout: 300000,
+    });
+  }
 
-  const pkgDir = join(NPM_WORK_DIR, 'node_modules', '@kinthaiofficial', 'openclaw-kinthai');
+  const pkgDir = join(OLD_VER_DIR, 'node_modules', '@kinthaiofficial', 'openclaw-kinthai');
   const out = run(`node ${join(pkgDir, 'scripts', 'setup.mjs')} install ${TEST_EMAIL}`, {
     cwd: pkgDir,
   });
@@ -111,13 +117,17 @@ setupUpgrade.test('simulate user tokens before upgrade', async () => {
 });
 
 setupUpgrade.test('upgrade to latest version via npm', async () => {
-  // Install latest
-  run(`npm install @kinthaiofficial/openclaw-kinthai@latest`, {
-    cwd: NPM_WORK_DIR,
-    timeout: 300000,
-  });
+  const newPkg = join(NEW_VER_DIR, 'node_modules', '@kinthaiofficial', 'openclaw-kinthai', 'package.json');
+  if (!await fileExists(newPkg)) {
+    await rm(NEW_VER_DIR, { recursive: true, force: true }).catch(() => {});
+    await mkdir(NEW_VER_DIR, { recursive: true });
+    run(`npm install @kinthaiofficial/openclaw-kinthai@latest`, {
+      cwd: NEW_VER_DIR,
+      timeout: 300000,
+    });
+  }
 
-  const pkgDir = join(NPM_WORK_DIR, 'node_modules', '@kinthaiofficial', 'openclaw-kinthai');
+  const pkgDir = join(NEW_VER_DIR, 'node_modules', '@kinthaiofficial', 'openclaw-kinthai');
   const out = run(`node ${join(pkgDir, 'scripts', 'setup.mjs')} install ${TEST_EMAIL}`, {
     cwd: pkgDir,
   });
@@ -303,7 +313,7 @@ crossMethod.test('npm install then clawhub install: both dirs exist', async () =
   await cleanAll();
 
   // Install via npm
-  const pkgDir = join(NPM_WORK_DIR, 'node_modules', '@kinthaiofficial', 'openclaw-kinthai');
+  const pkgDir = join(NEW_VER_DIR, 'node_modules', '@kinthaiofficial', 'openclaw-kinthai');
   run(`node ${join(pkgDir, 'scripts', 'setup.mjs')} install ${TEST_EMAIL}`, { cwd: pkgDir });
   assert(await fileExists(CHANNELS_DIR), 'channels/ should exist');
 
@@ -324,7 +334,7 @@ crossMethod.test('both dirs present: plugin doctor reports issue', async () => {
 
 crossMethod.test('remove.mjs does NOT touch clawhub install', async () => {
   // After npm remove, clawhub's extensions/ should still be there
-  const pkgDir = join(NPM_WORK_DIR, 'node_modules', '@kinthaiofficial', 'openclaw-kinthai');
+  const pkgDir = join(NEW_VER_DIR, 'node_modules', '@kinthaiofficial', 'openclaw-kinthai');
   run(`node ${join(pkgDir, 'scripts', 'remove.mjs')}`, { cwd: pkgDir });
 
   assert(!await fileExists(CHANNELS_DIR), 'channels/ should be gone');
@@ -344,7 +354,7 @@ crossMethod.test('clawhub first, then npm setup.mjs: both coexist', async () => 
   });
   assert(await fileExists(EXTENSIONS_DIR), 'extensions/ should exist');
 
-  const pkgDir = join(NPM_WORK_DIR, 'node_modules', '@kinthaiofficial', 'openclaw-kinthai');
+  const pkgDir = join(NEW_VER_DIR, 'node_modules', '@kinthaiofficial', 'openclaw-kinthai');
   run(`node ${join(pkgDir, 'scripts', 'setup.mjs')} install ${TEST_EMAIL}`, { cwd: pkgDir });
   assert(await fileExists(CHANNELS_DIR), 'channels/ should also exist');
 
@@ -360,7 +370,7 @@ edge.test('upgrade over corrupted install: npm install fixes it', async () => {
   await cleanAll();
 
   // Install via npm
-  const pkgDir = join(NPM_WORK_DIR, 'node_modules', '@kinthaiofficial', 'openclaw-kinthai');
+  const pkgDir = join(NEW_VER_DIR, 'node_modules', '@kinthaiofficial', 'openclaw-kinthai');
   run(`node ${join(pkgDir, 'scripts', 'setup.mjs')} install ${TEST_EMAIL}`, { cwd: pkgDir });
 
   // Corrupt a file
@@ -429,7 +439,7 @@ edge.test('uninstall already-uninstalled plugin: idempotent', async () => {
 
 edge.test('remove.mjs on nonexistent install: graceful', async () => {
   await cleanAll();
-  const pkgDir = join(NPM_WORK_DIR, 'node_modules', '@kinthaiofficial', 'openclaw-kinthai');
+  const pkgDir = join(NEW_VER_DIR, 'node_modules', '@kinthaiofficial', 'openclaw-kinthai');
   const out = run(`node ${join(pkgDir, 'scripts', 'remove.mjs')}`, {
     cwd: pkgDir,
     allowFail: true,
