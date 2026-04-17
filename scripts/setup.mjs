@@ -200,10 +200,22 @@ async function cmdUninstall({ deleteAccount = false } = {}) {
   ok('Plugin uninstalled');
 
   if (deleteAccount) {
-    // 2. Remove account + trigger onAccountRemoved hook (clears credentials/kinthai/)
-    step('Removing account and clearing credentials...');
-    runOC(['channels', 'remove', 'kinthai', '--delete'], { allowFail: true });
-    ok('Account and credentials removed');
+    // 2. Purge credentials directly.
+    // (openclaw channels remove doesn't recognize 3rd-party channel ids,
+    // so onAccountRemoved hook can't be triggered via CLI. Clean manually.)
+    // 直接清凭证目录：openclaw channels remove 不识别第三方 channel id，
+    // 所以 onAccountRemoved hook 无法通过 CLI 触发，这里直接删。
+    step('Clearing credentials...');
+    try {
+      const { rm } = await import('node:fs/promises');
+      const path = await import('node:path');
+      const { homedir } = await import('node:os');
+      const credDir = path.join(homedir(), '.openclaw', 'credentials', 'kinthai');
+      await rm(credDir, { recursive: true, force: true });
+      ok(`Credentials removed from ${credDir}`);
+    } catch (e) {
+      err(`Failed to clean credentials: ${e.message}`);
+    }
   } else {
     console.log(`
 ${cyan('Note:')} credentials/kinthai/ is preserved. To purge everything, use:
