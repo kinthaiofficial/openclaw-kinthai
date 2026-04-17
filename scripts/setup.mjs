@@ -113,10 +113,24 @@ async function cmdInstall(email) {
 
   console.log(`\n${bold('KinthAI Plugin Installer')}\n`);
 
-  // 1. Install the plugin via openclaw (extensions/kinthai/)
-  step('Installing plugin via openclaw plugins install...');
-  runOC(['plugins', 'install', PKG_ROOT, '--force']);
-  ok('Plugin installed');
+  // 1. Pack + install via openclaw (extensions/kinthai/).
+  // Use npm pack so openclaw only sees files[] — avoids scanning node_modules/test.
+  // 先 npm pack，只把 files[] 声明的文件打成 tgz，避免扫 node_modules/test 目录。
+  step('Packing plugin...');
+  const tmpDir = execFileSync('mktemp', ['-d'], { encoding: 'utf8' }).trim();
+  let tgzPath;
+  try {
+    const packOut = execFileSync('npm', ['pack', '--silent', '--pack-destination', tmpDir], {
+      cwd: PKG_ROOT,
+      encoding: 'utf8',
+    }).trim();
+    tgzPath = `${tmpDir}/${packOut.split('\n').pop()}`;
+    step('Installing plugin via openclaw plugins install...');
+    runOC(['plugins', 'install', tgzPath, '--force']);
+    ok('Plugin installed');
+  } finally {
+    try { execFileSync('rm', ['-rf', tmpDir]); } catch {}
+  }
 
   // 2. Set email via openclaw config set
   step('Configuring email...');
@@ -143,9 +157,19 @@ async function cmdUpdate() {
   step('Updating plugin via openclaw plugins update...');
   const out = runOC(['plugins', 'update', 'kinthai'], { allowFail: true });
   if (out === null) {
-    // Fallback: reinstall from current package
+    // Fallback: pack + reinstall (avoids scanning node_modules)
     step('Update command unavailable, reinstalling from package...');
-    runOC(['plugins', 'install', PKG_ROOT, '--force']);
+    const tmpDir = execFileSync('mktemp', ['-d'], { encoding: 'utf8' }).trim();
+    try {
+      const packOut = execFileSync('npm', ['pack', '--silent', '--pack-destination', tmpDir], {
+        cwd: PKG_ROOT,
+        encoding: 'utf8',
+      }).trim();
+      const tgzPath = `${tmpDir}/${packOut.split('\n').pop()}`;
+      runOC(['plugins', 'install', tgzPath, '--force']);
+    } finally {
+      try { execFileSync('rm', ['-rf', tmpDir]); } catch {}
+    }
   }
   ok('Plugin updated');
 
