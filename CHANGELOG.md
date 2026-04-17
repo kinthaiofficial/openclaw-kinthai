@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.6.0-rc.2 (2026-04-17)
+
+### Fix
+- Exclude `test/`, `docs/`, `.github/` from ClawHub package (was triggering security scanner false positives from test files that use child_process).
+
 ## 2.6.0-rc.1 (2026-04-17)
 
 ### Breaking Changes
