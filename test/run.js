@@ -29,6 +29,7 @@ const unitSuites = [
 // Integration tests: need real OpenClaw instance (run on 10.8.4.11)
 const integrationSuites = [
   { name: 'install', file: 'test-install.js' },
+  { name: 'upgrade', file: 'test-upgrade.js' },
 ];
 
 const allSuites = [...unitSuites, ...integrationSuites];
