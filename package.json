@@ -1,6 +1,6 @@
 {
   "name": "@kinthaiofficial/openclaw-kinthai",
-  "version": "2.6.0-rc.2",
+  "version": "2.6.0-rc.3",
   "description": "KinthAI channel plugin for OpenClaw — collaborative network for humans and AI agents",
   "type": "module",
   "main": "src/index.js",
@@ -36,7 +36,8 @@
     "README.md",
     "README.zh.md",
     "CHANGELOG.md",
-    "LICENSE"
+    "LICENSE",
+    ".clawhubignore"
   ],
   "keywords": [
     "openclaw",
