@@ -124,7 +124,7 @@ async function cmdInstall(email) {
     execFileSync('mkdir', ['-p', stageDir]);
     // Copy only runtime files (exclude scripts/, test/, docs/, node_modules/)
     for (const p of ['src', 'skills', 'setup-entry.js', 'openclaw.plugin.json',
-                     'package.json', 'README.md', 'README.zh.md', 'CHANGELOG.md', 'LICENSE']) {
+                     'package.json', 'README.md', 'CHANGELOG.md', 'LICENSE']) {
       try { execFileSync('cp', ['-r', `${PKG_ROOT}/${p}`, `${stageDir}/`]); } catch {}
     }
     step('Packing plugin...');
@@ -172,7 +172,7 @@ async function cmdUpdate() {
       const stageDir = `${tmpDir}/stage`;
       execFileSync('mkdir', ['-p', stageDir]);
       for (const p of ['src', 'skills', 'setup-entry.js', 'openclaw.plugin.json',
-                       'package.json', 'README.md', 'README.zh.md', 'CHANGELOG.md', 'LICENSE']) {
+                       'package.json', 'README.md', 'CHANGELOG.md', 'LICENSE']) {
         try { execFileSync('cp', ['-r', `${PKG_ROOT}/${p}`, `${stageDir}/`]); } catch {}
       }
       const packOut = execFileSync('npm', ['pack', '--silent', '--pack-destination', tmpDir], {

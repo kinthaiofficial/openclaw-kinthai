@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.6.1-rc.1 (2026-04-17)
+
+### Fix
+- Move `README.zh.md` out of package root into `docs/`. npm registry was selecting `README.zh.md` as the readme metadata, so the package page on npmjs.com rendered the Chinese README instead of the English one. v2.6.0 ships correct code; only the rendered page was wrong.
+
 ## 2.6.0 (2026-04-17)
 
 Stable release of 2.6.0 after 8 rc iterations on 10.8.4.11 (oc-plugin-test).
