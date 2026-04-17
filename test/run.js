@@ -24,6 +24,8 @@ const unitSuites = [
   { name: 'register-edge', file: 'test-register-edge.js' },
   { name: 'api', file: 'test-api.js' },
   { name: 'websocket', file: 'test-websocket.js' },
+  { name: 'plugin-base', file: 'test-plugin-base.js' },
+  { name: 'lifecycle', file: 'test-lifecycle.js' },
 ];
 
 // Integration tests: need real OpenClaw instance (run on 10.8.4.11)

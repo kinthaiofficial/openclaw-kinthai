@@ -24,11 +24,9 @@
  */
 
 import { defineChannelPluginEntry } from 'openclaw/plugin-sdk/core';
-import { kinthaiPlugin, setRuntime, agentRegistry } from './plugin.js';
+import { kinthaiPlugin, setRuntime, agentRegistry, TOKENS_FILE_PATH, KINTHAI_URL, getRuntime } from './plugin.js';
 import { lastModelInfo } from './messages.js';
 import { registerSingleAgent } from './register.js';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
 
 // ── Role context cache for before_prompt_build ──────────────────────────────
 // conversationId → { data, timestamp }
@@ -128,8 +126,21 @@ export default defineChannelPluginEntry({
   setRuntime,
   registerFull(api) {
     const log = api.logger || console;
-    const __dirname = import.meta.dirname ?? path.dirname(fileURLToPath(import.meta.url));
-    const tokensFilePath = path.join(__dirname, '..', '.tokens.json');
+    const tokensFilePath = TOKENS_FILE_PATH;
+
+    // Resolve email lazily from openclaw config (needed for auto-registering new agents).
+    // 延迟从 openclaw 配置读取 email（注册新 agent 时需要）。
+    async function getEmail() {
+      try {
+        const runtime = getRuntime();
+        const cfg = runtime?.config?.loadConfig
+          ? await runtime.config.loadConfig()
+          : null;
+        return cfg?.channels?.kinthai?.email || null;
+      } catch {
+        return null;
+      }
+    }
 
     // Inject group role context into system prompt
     api.on('before_prompt_build', async (event) => {
@@ -187,7 +198,12 @@ export default defineChannelPluginEntry({
       registeringAgents.add(agentId);
 
       try {
-        await registerSingleAgent(agentId, tokensFilePath, log);
+        const email = await getEmail();
+        if (!email) {
+          log.warn(`[KK-W006] Cannot auto-register "${agentId}" — channels.kinthai.email not configured`);
+          return;
+        }
+        await registerSingleAgent(agentId, KINTHAI_URL, email, tokensFilePath, log);
       } catch (err) {
         log.warn(`[KK-W007] Auto-register error for "${agentId}": ${err.message}`);
       } finally {

@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.6.0-rc.1 (2026-04-17)
+
+### Breaking Changes
+- **Tokens moved to `~/.openclaw/credentials/kinthai/.tokens.json`** (was `PLUGIN_ROOT/.tokens.json`). This fixes a critical bug where ClawHub upgrades wiped all agent tokens. No migration: agents will re-register via 409 conflict recovery on first run.
+- **`url` is no longer configurable** — hardcoded to `https://kinthai.ai`. Self-hosted deployments are not supported. Removed `KINTHAI_URL` env var.
+- **Removed `channels.kinthai.url` / `wsUrl` / `kinthaiUserId`** from config schema. Only `email` is accepted.
+- **`.tokens.json` no longer stores `_email` / `_kinthai_url`** — email is read from `channels.kinthai.email`, url is hardcoded. Only `_machine_id` metadata is preserved.
+- **`registerSingleAgent()` signature changed** — now takes `(agentId, kinthaiUrl, email, tokensFilePath, log)`. email is passed by caller (from openclaw config), not read from tokens file.
+
+### New Features
+- **npx commands delegate to `openclaw plugins/config/channels`** — install/update/uninstall/remove all invoke openclaw native commands. Both npx and ClawHub installs now end up in `~/.openclaw/extensions/kinthai/` (no more `channels/kinthai/` divergence).
+- **`npx update` command** — update plugin without re-entering email.
+- **`npx uninstall` vs `npx remove`** — uninstall keeps credentials (for reinstall), remove purges everything.
+- **`onAccountRemoved` lifecycle hook** — clears `credentials/kinthai/` when user runs `openclaw channels remove kinthai --delete`.
+- **`setupWizard`** — ClawHub users can run `openclaw setup --wizard` for interactive email configuration.
+
+### Internal
+- Tokens file parent dir auto-created on save (`mkdir -p`)
+- Config adapter `isConfigured` checks email instead of url
+
 ## 2.5.1 (2026-04-16)
 
 ### Improvements

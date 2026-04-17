@@ -11,8 +11,8 @@
  * "potential-exfiltration" warning (file-read + network-send in same file).
  */
 
-import { readFile, writeFile, readdir, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile, writeFile, readdir, stat, mkdir } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 
 /**
@@ -99,6 +99,7 @@ export async function loadTokensData(tokensFilePath) {
  * 将 token 数据保存到 .tokens.json（权限 0600）。
  */
 export async function saveTokensData(tokensFilePath, tokensData) {
+  await mkdir(dirname(tokensFilePath), { recursive: true });
   await writeFile(tokensFilePath, JSON.stringify(tokensData, null, 2), { mode: 0o600 });
   try {
     const { chmod } = await import('node:fs/promises');

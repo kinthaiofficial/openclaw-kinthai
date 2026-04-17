@@ -17,12 +17,12 @@ export async function createTempOpenClaw(opts = {}) {
   const openclawDir = join(base, '.openclaw');
   await mkdir(openclawDir, { recursive: true });
 
-  // openclaw.json
+  // openclaw.json — only email, no url (hardcoded in plugin)
+  // openclaw.json — 只有 email，url 硬编码
   const config = {
     gateway: { port: 18789, auth: { token: 'test-token' } },
     channels: {
       kinthai: {
-        url: opts.url || 'http://localhost:18900',
         email: opts.email || 'test@example.com',
       },
     },
@@ -52,16 +52,22 @@ export async function createTempOpenClaw(opts = {}) {
     await mkdir(join(agentsDir, name), { recursive: true });
   }
 
-  // channels/kinthai directory (where plugin lives)
-  const pluginDir = join(openclawDir, 'channels', 'kinthai');
+  // Plugin lives in extensions/kinthai/ (aligned with openclaw convention)
+  // 插件位于 extensions/kinthai/（对齐 openclaw 官方约定）
+  const pluginDir = join(openclawDir, 'extensions', 'kinthai');
   await mkdir(pluginDir, { recursive: true });
 
-  const tokensFilePath = join(pluginDir, '.tokens.json');
+  // Tokens live in credentials/kinthai/ (survives plugin upgrade)
+  // tokens 位于 credentials/kinthai/（升级插件时不会丢）
+  const credentialsDir = join(openclawDir, 'credentials', 'kinthai');
+  await mkdir(credentialsDir, { recursive: true });
+  const tokensFilePath = join(credentialsDir, '.tokens.json');
 
   return {
     base,
     openclawDir,
     pluginDir,
+    credentialsDir,
     tokensFilePath,
     deviceId,
     agentNames,

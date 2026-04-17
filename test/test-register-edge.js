@@ -172,18 +172,15 @@ t.test('stale token: agent removed from disk but token remains in file', async (
   }
 });
 
-// ── registerSingleAgent: no metadata in .tokens.json ─────────────────────────
+// ── registerSingleAgent: missing email returns null ──────────────────────────
 
-t.test('registerSingleAgent: fails gracefully with no metadata', async () => {
+t.test('registerSingleAgent: fails gracefully when email is missing', async () => {
   const env = await createTempOpenClaw({ agents: ['orphan'] });
   try {
-    // Write tokens file with no metadata
-    await writeFile(env.tokensFilePath, JSON.stringify({ 'some-other': 'token' }));
-
     const { registerSingleAgent } = await import('../src/register.js');
-    const result = await registerSingleAgent('orphan', env.tokensFilePath, console);
-
-    assertEqual(result, null, 'should return null — no _email or _kinthai_url');
+    // No email passed
+    const result = await registerSingleAgent('orphan', 'http://localhost:18900', null, env.tokensFilePath, console);
+    assertEqual(result, null, 'should return null — no email');
   } finally {
     await env.cleanup();
   }
@@ -197,7 +194,13 @@ t.test('registerSingleAgent: returns null for already registered agent', async (
     const { autoRegisterAgents, registerSingleAgent } = await import('../src/register.js');
     await autoRegisterAgents('http://localhost:18900', 'dup@example.com', env.tokensFilePath, console);
 
-    const result = await registerSingleAgent('existing', env.tokensFilePath, console);
+    const result = await registerSingleAgent(
+      'existing',
+      'http://localhost:18900',
+      'dup@example.com',
+      env.tokensFilePath,
+      console,
+    );
     assertEqual(result, null, 'should return null — already registered');
   } finally {
     await env.cleanup();

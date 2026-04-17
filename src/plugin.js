@@ -4,6 +4,7 @@
  */
 
 import { createPluginRuntimeStore } from 'openclaw/plugin-sdk/runtime-store';
+import { resolveOAuthDir } from 'openclaw/plugin-sdk/state-paths';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { KinthaiApi } from './api.js';
@@ -18,6 +19,16 @@ import { kinthaiPluginBase } from './plugin-base.js';
 const __dirname = import.meta.dirname ?? path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN_ROOT = path.resolve(__dirname, '..');
 
+// Hardcoded KinthAI endpoints — self-hosted deployments are not supported.
+// 硬编码 KinthAI 端点 — 不支持自部署服务端。
+const KINTHAI_URL = 'https://kinthai.ai';
+const KINTHAI_WS_URL = 'wss://kinthai.ai';
+
+// Tokens stored in openclaw's credentials dir — survives plugin upgrades.
+// tokens 存在 openclaw 的 credentials 目录下 — 插件升级不会丢失。
+// Path: ~/.openclaw/credentials/kinthai/.tokens.json
+export const TOKENS_FILE_PATH = path.join(resolveOAuthDir(), 'kinthai', '.tokens.json');
+
 const runtimeStore = createPluginRuntimeStore('kinthai: runtime not initialized');
 const { getRuntime, setRuntime } = runtimeStore;
 
@@ -28,16 +39,33 @@ export const agentRegistry = new Map();
 const kinthaiPlugin = {
   ...kinthaiPluginBase,
   setup: {},
+  lifecycle: {
+    // Clean up credentials/kinthai/ when user removes the account.
+    // Triggered by: openclaw channels remove kinthai --delete
+    // 用户删除账号时清理 credentials/kinthai/
+    // 触发：openclaw channels remove kinthai --delete
+    onAccountRemoved: async ({ accountId }) => {
+      try {
+        const { rm } = await import('node:fs/promises');
+        const credDir = path.dirname(TOKENS_FILE_PATH);
+        await rm(credDir, { recursive: true, force: true });
+        console.log(`[KK-I030] Cleaned credentials for account "${accountId}" at ${credDir}`);
+      } catch (err) {
+        console.warn(`[KK-W008] Failed to clean credentials: ${err.message}`);
+      }
+    },
+  },
   gateway: {
     startAccount: async (ctx) => {
       const account = ctx.account;
 
-      // [KK-E001] url is the only required config field
-      // [KK-E001] url 是唯一必需的配置字段
-      if (!account.url) {
+      // [KK-E001] email is the only required config field
+      // [KK-E001] email 是唯一必需的配置字段
+      if (!account.email) {
         ctx.log?.error?.(
-          '[KK-E001] Config invalid: url missing — channel will not start. ' +
-          'Check channels.kinthai in openclaw.json.',
+          '[KK-E001] Config invalid: email missing — agents cannot register. ' +
+          'Run `openclaw config set channels.kinthai.email your@email.com` or ' +
+          '`openclaw setup --wizard` to configure.',
         );
         return;
       }
@@ -57,9 +85,9 @@ const kinthaiPlugin = {
       // 从 package.json 读取插件版本（通过 register-scan.js）
       const pluginVersion = await readPluginVersion(PLUGIN_ROOT);
 
-      const kithApiUrl = account.url.replace(/\/$/, '');
-      const wsUrl = account.wsUrl || account.url.replace(/^http/, 'ws');
-      const tokensFilePath = path.join(PLUGIN_ROOT, '.tokens.json');
+      const kithApiUrl = KINTHAI_URL;
+      const wsUrl = KINTHAI_WS_URL;
+      const tokensFilePath = TOKENS_FILE_PATH;
 
       // Auto-register agents if email is configured
       // 如果配置了 email，自动注册所有 agent
@@ -93,7 +121,7 @@ const kinthaiPlugin = {
           return;
         }
 
-        const kithUserId = selfUserId || account.kinthaiUserId || 'kinthai';
+        const kithUserId = selfUserId || 'kinthai';
 
         ctx.log?.info?.(
           `[KK-I002] startAgent "${label}" — url=${kithApiUrl} wsUrl=${wsUrl} ` +
@@ -186,4 +214,4 @@ const kinthaiPlugin = {
   },
 };
 
-export { kinthaiPlugin, setRuntime, getRuntime };
+export { kinthaiPlugin, setRuntime, getRuntime, KINTHAI_URL };

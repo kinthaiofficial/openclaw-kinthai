@@ -26,12 +26,12 @@ t.test('new agent registers and gets api_key', async () => {
     assert(tokens['agent-a'], 'agent-a should have a token');
     assert(tokens['agent-a'].startsWith('kk_test_'), 'token should start with kk_test_');
 
-    // Verify .tokens.json was written
+    // Verify .tokens.json was written (v2.6.0: no _email/_kinthai_url)
     const saved = JSON.parse(await readFile(env.tokensFilePath, 'utf8'));
     assert(saved['agent-a'], '.tokens.json should contain agent-a');
-    assertEqual(saved._email, 'test@example.com', '_email metadata');
-    assertEqual(saved._kinthai_url, 'http://localhost:18900', '_kinthai_url metadata');
     assert(saved._machine_id, '_machine_id should be set');
+    assert(!saved._email, '_email should NOT be stored (in openclaw.json instead)');
+    assert(!saved._kinthai_url, '_kinthai_url should NOT be stored (url is hardcoded)');
   } finally {
     await env.cleanup();
   }
@@ -203,8 +203,14 @@ t.test('registerSingleAgent registers new agent using cached metadata', async ()
     await wf(env.tokensFilePath, await rf(env1.tokensFilePath, 'utf8'));
     await env1.cleanup();
 
-    // Register newcomer via registerSingleAgent
-    const result = await registerSingleAgent('newcomer', env.tokensFilePath, console);
+    // Register newcomer via registerSingleAgent (new signature: kinthaiUrl + email)
+    const result = await registerSingleAgent(
+      'newcomer',
+      'http://localhost:18900',
+      'single@example.com',
+      env.tokensFilePath,
+      console,
+    );
     assert(result !== null, 'should return registration result');
     assert(result.api_key, 'should have api_key');
     assert(result.kk_agent_id, 'should have kk_agent_id');

@@ -100,11 +100,13 @@ export async function autoRegisterAgents(kinthaiUrl, email, tokensFilePath, log)
     }
   }
 
-  // Save tokens with metadata
+  // Save tokens with machineId (email/url not duplicated here — they live in openclaw.json)
+  // 保存 tokens 和 machineId（email/url 不在这里冗余存，它们在 openclaw.json 里）
   if (registered > 0 || !tokensData._machine_id) {
     if (machineId) tokensData._machine_id = machineId;
-    tokensData._email = email;
-    tokensData._kinthai_url = kinthaiUrl;
+    // Strip legacy fields if present (upgrading from v2.5.x)
+    delete tokensData._email;
+    delete tokensData._kinthai_url;
     await saveTokensData(tokensFilePath, tokensData);
     log?.info?.(`[KK-REG] Tokens saved (mode 0600) — registered=${registered} skipped=${skipped}`);
   }
@@ -128,11 +130,15 @@ export async function autoRegisterAgents(kinthaiUrl, email, tokensFilePath, log)
  * 注册单个新 agent（从 agent_end hook 调用）。
  *
  * @param {string} agentId - Agent ID to register
+ * @param {string} kinthaiUrl - KinthAI server URL
+ * @param {string} email - Human owner's email (from ctx.account.email)
  * @param {string} tokensFilePath - Path to .tokens.json
  * @param {object} log - Logger
  * @returns {object|null} { api_key, kk_agent_id } or null
  */
-export async function registerSingleAgent(agentId, tokensFilePath, log) {
+export async function registerSingleAgent(agentId, kinthaiUrl, email, tokensFilePath, log) {
+  if (!email || !kinthaiUrl) return null;
+
   const { loadTokensData, getMachineId: getMId } = await import('./register-scan.js');
   let tokensData;
   try {
@@ -140,10 +146,6 @@ export async function registerSingleAgent(agentId, tokensFilePath, log) {
   } catch { return null; }
 
   if (tokensData[agentId]) return null; // already registered
-
-  const email = tokensData._email;
-  const kinthaiUrl = tokensData._kinthai_url;
-  if (!email || !kinthaiUrl) return null;
 
   // Resolve machineId: try cached value first, then live query
   let machineId = tokensData._machine_id;
