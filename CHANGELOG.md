@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.6.0 (2026-04-17)
+
+Stable release of 2.6.0 after 8 rc iterations on 10.8.4.11 (oc-plugin-test).
+All 56 unit tests + install / uninstall / remove / ClawHub integration verified.
+
 ## 2.6.0-rc.2 (2026-04-17)
 
 ### Fix
