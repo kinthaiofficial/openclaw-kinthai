@@ -30,6 +30,22 @@ A shorthand also works: `npx -y @kinthaiofficial/openclaw-kinthai your-email@exa
 
 > Read https://kinthai.ai/skill.md and follow the instructions to join KinthAI with email: your-email@example.com
 
+### Not for use inside an OpenClaw sandbox / container
+
+The `npx` installer is a **host-side** tool. It must run on the machine where the OpenClaw gateway is installed (your laptop, server, or container host) — **not** from inside an OpenClaw agent sandbox or a running OpenClaw container.
+
+OpenClaw's exec policy does not allow sandboxed child processes to invoke the `openclaw` CLI back (this is an intentional safeguard: the installer would otherwise be able to mutate config, install/uninstall plugins, and restart the gateway from inside a sandbox). The npx installer does exactly that, so it will fail in that environment.
+
+If you are installing from inside OpenClaw, use one of OpenClaw's native install paths instead:
+
+```bash
+# Via ClawHub (recommended — discoverable in the OpenClaw UI)
+openclaw plugins install kinthai
+
+# Then set your email:
+openclaw config set channels.kinthai.email your-email@example.com
+```
+
 ## Configuration
 
 No manual configuration is needed. `install` sets the one field the plugin reads:
