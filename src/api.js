@@ -84,4 +84,84 @@ export class KinthaiApi {
     }
     return res.json();
   }
+
+  // ── Agent tools API (v3.0.0) ─────────────────────────────────────────────
+  // See contract-agent-tools-protocol.md. All three endpoints are agent-only
+  // (user_type=2 per backend authenticate middleware).
+
+  async fetchToolManifest({ signal } = {}) {
+    const url = `${this.baseUrl}/api/v1/agent/tools/manifest`;
+    const res = await fetch(url, { method: 'GET', headers: this._headers(), signal });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      this.log?.warn?.(`[KK-T032] GET /api/v1/agent/tools/manifest → ${res.status}: ${text}`);
+      const err = new Error(`manifest fetch failed: ${res.status}`);
+      err.code = res.status === 401 ? 'unauthorized' : 'backend_unavailable';
+      throw err;
+    }
+    return res.json();
+  }
+
+  async dispatchTool(toolName, params, dispatchId) {
+    return this._fetchTool('/api/v1/agent/tools/dispatch', { tool: toolName, params }, { dispatchId });
+  }
+
+  async continueTool(continuationId, result) {
+    return this._fetchTool('/api/v1/agent/tools/continue', {
+      continuation_id: continuationId,
+      result,
+    });
+  }
+
+  /**
+   * POST helper for the dispatch / continue endpoints.
+   *
+   * Returns a structured object on every path (never throws). Folds non-2xx
+   * HTTP responses into `{ok:false, error, hint}` so callers don't need to
+   * special-case 4xx and 200+ok:false separately. Implements 429 backoff
+   * (3 attempts, exponential or honoring Retry-After).
+   */
+  async _fetchTool(path, body, { dispatchId } = {}) {
+    const url = `${this.baseUrl}${path}`;
+    const headers = { ...this._headers() };
+    if (dispatchId) headers['X-Dispatch-Id'] = dispatchId;
+
+    const MAX_RETRIES = 3;
+    for (let attempt = 0; ; attempt++) {
+      let res;
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        });
+      } catch (err) {
+        this.log?.warn?.(`[KK-T032] ${path} fetch threw: ${err.message}`);
+        return { ok: false, error: 'backend_unavailable', hint: err.message };
+      }
+
+      if (res.status === 429 && attempt < MAX_RETRIES) {
+        const retryAfter = parseInt(res.headers.get('retry-after') || '0', 10);
+        const delayMs = retryAfter > 0 ? retryAfter * 1000 : 500 * Math.pow(2, attempt);
+        this.log?.warn?.(`[KK-T031] ${path} rate_limited; backoff ${delayMs}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+        await new Promise((r) => setTimeout(r, delayMs));
+        continue;
+      }
+
+      let parsed = null;
+      try { parsed = await res.json(); } catch { /* non-JSON or empty body */ }
+
+      if (res.ok) return parsed;
+
+      const code = res.status === 401 ? 'unauthorized'
+        : res.status === 403 ? 'forbidden'
+        : res.status === 410 ? 'continuation_expired'
+        : res.status === 429 ? 'rate_limited'
+        : res.status >= 500 ? 'backend_unavailable'
+        : (parsed?.error || 'http_error');
+      const hint = parsed?.hint || `HTTP ${res.status}`;
+      this.log?.warn?.(`[KK-T032] ${path} → ${res.status} ${code}: ${hint}`);
+      return { ok: false, error: code, hint };
+    }
+  }
 }

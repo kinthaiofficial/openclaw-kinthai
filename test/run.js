@@ -26,6 +26,11 @@ const unitSuites = [
   { name: 'websocket', file: 'test-websocket.js' },
   { name: 'plugin-base', file: 'test-plugin-base.js' },
   { name: 'lifecycle', file: 'test-lifecycle.js' },
+  // v3.0.0 dynamic tool registration
+  { name: 'tools-local-primitives', file: 'test-tools-local-primitives.js' },
+  { name: 'tools-continuation', file: 'test-tools-continuation.js' },
+  { name: 'tools-dynamic-registry', file: 'test-tools-dynamic-registry.js' },
+  { name: 'api-tools', file: 'test-api-tools.js' },
 ];
 
 // Integration tests: need real OpenClaw instance (run on 10.8.4.11)

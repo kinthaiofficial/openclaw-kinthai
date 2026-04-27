@@ -1,0 +1,28 @@
+{
+  "manifest_version": 1,
+  "generated_at": "2026-04-27T00:00:00Z",
+  "tools": [
+    {
+      "name": "kinthai_upload_file",
+      "description": "Upload a local file to a KinthAI conversation. Returns {ok:true, data:{file_id, message_id}} on success, or {ok:false, error, hint} on failure. Call this for any file the user asks you to send, or for AI-generated content longer than 500 characters. On failure, do NOT claim the file was sent — the response will tell you it failed. If you don't get a tool result back at all, also assume the file was not sent. Do not also write [FILE:] markers in the same reply; the tool replaces them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Target conversation id (use the conversation you are currently replying in)."
+          },
+          "local_path": {
+            "type": "string",
+            "description": "Absolute path on the agent machine. Must be inside the agent workspace, /tmp, or ~/.openclaw — other paths return path_denied."
+          },
+          "caption": {
+            "type": "string",
+            "description": "Optional caption to send alongside the file."
+          }
+        },
+        "required": ["conversation_id", "local_path"]
+      }
+    }
+  ]
+}

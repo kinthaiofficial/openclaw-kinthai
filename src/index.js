@@ -27,6 +27,7 @@ import { defineChannelPluginEntry } from 'openclaw/plugin-sdk/core';
 import { kinthaiPlugin, setRuntime, agentRegistry, TOKENS_FILE_PATH, KINTHAI_URL, getRuntime } from './plugin.js';
 import { lastModelInfo } from './messages.js';
 import { registerSingleAgent } from './register.js';
+import { setupDynamicRegistry } from './tools/dynamic-registry.js';
 
 // ── Role context cache for before_prompt_build ──────────────────────────────
 // conversationId → { data, timestamp }
@@ -209,6 +210,19 @@ export default defineChannelPluginEntry({
       } finally {
         registeringAgents.delete(agentId);
       }
+    });
+
+    // Dynamic tool registration (v3.0.0).
+    // Hook fetches manifest from backend on each agent run; factory reads
+    // the per-agent cache and exposes typed tools to the LLM. New tools
+    // ship via backend deploy; the plugin doesn't need a release.
+    setupDynamicRegistry(api, {
+      getApiForAgent: (agentId) => agentRegistry.get(agentId) || null,
+      // ctx.agentId is the OpenClaw agent name (= agents.openclaw_agent_id
+      // server-side). NOT the same as users.public_id. agentRegistry is
+      // keyed by this value (plugin.js:163 state.agentId = openclawAgentId).
+      getAgentId: (ctx) => ctx?.agentId || ctx?.agentAccountId || null,
+      log,
     });
   },
 });

@@ -1,5 +1,51 @@
 # Changelog
 
+## 3.0.0 (2026-04-27)
+
+### Major Feature: Dynamic Tool Registration
+
+Agents now operate KinthAI through real OpenClaw tools (`kinthai_upload_file`, …) instead of post-hoc `[FILE:]` marker parsing. Tool calls return structured results (`{ok:true, data:{...}}` or `{ok:false, error, hint}`), so agents know whether a file actually went through. This addresses the v2.7.0 "agent says ✅ uploaded when nothing was sent" problem.
+
+**Mechanism**:
+- `before_agent_start` async hook fetches `GET /api/v1/agent/tools/manifest` and writes a per-agent local cache.
+- `registerTool` factory (sync, called per agent run) reads the cache and exposes typed tools to the LLM.
+- New tools ship via backend deploy — the plugin doesn't need a release.
+
+**New files**:
+- `src/tools/local-primitives.js` — read/write/list_local_dir + multipart `upload_local_file_to_conversation` continuation handlers; allowlist passed in as a parameter (not module-level state) so multi-agent runs in the same process can't pollute each other's filesystem boundary.
+- `src/tools/continuation.js` — drives the dispatch → continuation → continue loop with depth cap.
+- `src/tools/dynamic-registry.js` — wires the hook + factory; mtime-based mem cache; cold-path falls back to `default-manifest.json` so the LLM still sees tools when the backend is unreachable (failure becomes structured feedback, not "tool disappeared").
+- `default-manifest.json` — first-run fallback containing `kinthai_upload_file`.
+
+**API additions** (`src/api.js`):
+- `fetchToolManifest({signal})` — manifest GET with abort signal support.
+- `dispatchTool(name, params, dispatchId)` — sends `X-Dispatch-Id` header; folds non-2xx into `{ok:false, error, hint}`; implements 429 backoff (3 attempts, honors `Retry-After`).
+- `continueTool(continuationId, result)` — same response folding.
+
+**Error code segment**: `KK-T001..T032` (info / warn / error for manifest refresh, dispatch, continuation, terminal).
+
+**SKILL.md** (`skills/kinthai-files/`): slimmed from ~85 lines to ~35 lines — decision guidance instead of marker syntax. The marker mechanism still works (compat path), but the skill steers agents toward the tool.
+
+### Compatibility
+
+- `[FILE:]` marker parsing in `src/files.js` is **retained** for a 6-month compat window. Existing agents continue to work without changes.
+- No breaking changes to `KinthaiApi` for existing methods.
+- No changes to channel registration, WS protocol, or token format.
+- `skills/kinthai-files/SKILL.md` is now in `package.json files[]` and the publish allowlist (was missing in v2.7.0; that skill only worked in places where it was hand-installed).
+
+### Tests
+
+- `test/test-tools-local-primitives.js` — path allowlist, multi-agent isolation regression (P0-#13), 8MB inline cap, base64 round-trip, dir listing.
+- `test/test-tools-continuation.js` — terminal pass-through, single/chained continuations, depth limit, unknown type, local primitive failures, network throw.
+- `test/test-tools-dynamic-registry.js` — factory cold path, hook fetch + cache write, fetch failure fallback, manifest_version validation, mtime invalidation, dispatchId UUID propagation.
+- `test/test-api-tools.js` — end-to-end against mock server: manifest fetch, dispatch happy path / continuation / terminal / 200+ok:false / unauthorized / schema_invalid / 429 backoff, continue happy path / expired / anti-theft, X-Dispatch-Id propagation.
+
+`test/mock-server.js` extended with `/api/v1/agent/tools/manifest|dispatch|continue` plus per-agent rate-limit toggle and dispatch observation helpers.
+
+### Notes for ops
+
+This release expects three new backend endpoints. Until the backend is deployed, the plugin falls back to the bundled `default-manifest.json` and dispatch handlers return `backend_unavailable` — the agent sees the tool exists but gets a structured failure when calling it. This is intentional: it preserves the tool surface for the LLM and produces honest failure messages instead of silent disappearance.
+
 ## 2.6.3 (2026-04-17)
 
 ### Internal
