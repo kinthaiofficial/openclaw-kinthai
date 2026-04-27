@@ -31,6 +31,8 @@ const unitSuites = [
   { name: 'tools-continuation', file: 'test-tools-continuation.js' },
   { name: 'tools-dynamic-registry', file: 'test-tools-dynamic-registry.js' },
   { name: 'api-tools', file: 'test-api-tools.js' },
+  // v3.0.2 messages error classification + rate-limit notice
+  { name: 'messages-error-classify', file: 'test-messages-error-classify.js' },
 ];
 
 // Integration tests: need real OpenClaw instance (run on 10.8.4.11)

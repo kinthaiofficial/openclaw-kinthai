@@ -1,5 +1,39 @@
 # Changelog
 
+## 3.0.2 (2026-04-27)
+
+### Bug Fix: rate_limit silence — surface a notice instead of suppressing
+
+Production reported that when an agent's LLM provider hits rate_limit, KK-W002 would suppress the entire reply. From the customer's view the agent just goes silent — no feedback, no retry hint. They poke it again, it stays silent (the rate limit is still active), they assume it's broken.
+
+`src/messages.js` `deliverReply` now classifies error replies before suppressing:
+- **`rate_limited`** (text matches `/rate[-_ ]?limit|\b429\b|too many requests|quota exceeded|throttl/i`) → post a brief notice: **`⏳ I'm rate limited by my LLM provider. Please retry in a moment.`** Tagged `metadata: {kind: "error", error_class: "rate_limited"}` so backend / UI can render it as a system error if desired.
+- **`other`** → keep the existing suppress behavior. LLM error text often carries provider keys, internal URLs, or stack traces; we do NOT post those to the conversation.
+
+### Dedup
+
+A misbehaving agent retrying every second would otherwise spam the rate-limit notice. Per-conversation timestamp Map skips notices issued within 30s of the last one (`RATE_LIMIT_NOTICE_DEDUP_MS`). Deduped attempts still log `[KK-W002] LLM rate_limit (deduped, last notice Ns ago): ...`.
+
+### New log codes
+
+- `KK-I014` — surfacing a rate_limit notice to the chat
+- `KK-W002` — extended: now also fires for "deduped" and "send-notice failed" sub-cases
+
+### New exports (`src/messages.js`)
+
+- `classifyReplyError(text, isError) → "rate_limited" | "other" | null`
+- `rateLimitNoticeDedup(timestamps, convId, now, dedupMs?) → {allow: true} | {allow: false, ageMs}`
+- `RATE_LIMIT_NOTICE_DEDUP_MS` constant
+
+Pure / mutate-explicit-arg shape so they're trivially unit-testable.
+
+### Tests
+
+`test/test-messages-error-classify.js` (13 tests):
+- `classifyReplyError`: normal text / empty / "LLM request rejected" / rate-limit phrases (8 variants) / `429` word-boundary / case-insensitive / non-error text containing "rate limit" passes through
+- `rateLimitNoticeDedup`: fresh Map allows / second call within window deduped with ageMs / call after window re-allows / different conv ids independent / DEDUP_MS=30s constant
+- `createMessageHandler`: smoke test (handler constructible)
+
 ## 3.0.1 (2026-04-27)
 
 ### Bug Fix: dynamic factory tool shape mismatch

@@ -17,8 +17,50 @@ import { ensureSessionDir } from './storage.js';
 // 与 index.js 的 agent_end hook 共享 — 存储最近一次 agent 运行的模型信息
 export const lastModelInfo = { value: null };
 
+/**
+ * Classify a `replyPayload` error string into one of:
+ *   - "rate_limited"  → surface a brief notice in chat (so customer isn't
+ *                       left staring at a silent agent)
+ *   - "other"         → suppress; LLM error text often contains keys / URLs
+ *                       / internal addresses we don't want in the chat
+ *   - null            → not an error, normal reply path
+ *
+ * Pure function — exported for unit tests.
+ */
+export function classifyReplyError(text, isError) {
+  const t = text || '';
+  if (!isError && !/^LLM request rejected:/i.test(t)) return null;
+  if (/\brate[\s_-]?limit|\b429\b|too many requests|quota exceeded|throttl/i.test(t)) {
+    return 'rate_limited';
+  }
+  return 'other';
+}
+
+export const RATE_LIMIT_NOTICE_DEDUP_MS = 30_000;
+const RATE_LIMIT_NOTICE_TEXT =
+  '⏳ I\'m rate limited by my LLM provider. Please retry in a moment.';
+
+/**
+ * Decide whether to surface a rate-limit notice for a given conversation,
+ * given the existing per-conv timestamp map. Mutates the map when allowing.
+ *
+ * @returns {{allow: true} | {allow: false, ageMs: number}}
+ */
+export function rateLimitNoticeDedup(timestamps, convId, now, dedupMs = RATE_LIMIT_NOTICE_DEDUP_MS) {
+  const last = timestamps.get(convId) || 0;
+  const ageMs = now - last;
+  if (ageMs < dedupMs) return { allow: false, ageMs };
+  timestamps.set(convId, now);
+  return { allow: true };
+}
+
 export function createMessageHandler(api, fileHandler, state, ctx) {
   const log = ctx.log;
+
+  // Per-conversation last-rate-limit-notice timestamp, used to dedup notices
+  // when an agent is hammering the LLM with retries. Closure-scoped so each
+  // agent's handler instance has its own dedup window.
+  const rateLimitNoticeTimestamps = new Map();
 
   /**
    * Build peer label with relationship annotation.
@@ -273,7 +315,28 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
 
     if (!replyPayload.text) return;
 
-    if (replyPayload.isError || /^LLM request rejected:/i.test(replyPayload.text)) {
+    const errClass = classifyReplyError(replyPayload.text, replyPayload.isError);
+    if (errClass === 'rate_limited') {
+      const decision = rateLimitNoticeDedup(rateLimitNoticeTimestamps, convId, Date.now());
+      if (!decision.allow) {
+        log?.warn?.(`[KK-W002] LLM rate_limit (deduped, last notice ${Math.round(decision.ageMs / 1000)}s ago): ${replyPayload.text.slice(0, 120)}`);
+        return;
+      }
+      log?.info?.(`[KK-I014] Surfacing rate_limit notice to conv=${convId}: ${replyPayload.text.slice(0, 120)}`);
+      try {
+        await api.sendMessage(convId, {
+          content: RATE_LIMIT_NOTICE_TEXT,
+          metadata: { kind: 'error', error_class: 'rate_limited' },
+        });
+      } catch (sendErr) {
+        log?.warn?.(`[KK-W002] failed to surface rate_limit notice: ${sendErr.message}`);
+      }
+      return;
+    }
+    if (errClass === 'other') {
+      // LLM error text often carries provider keys / URLs / internal addresses;
+      // we deliberately don't post these to the conversation. Customer-facing
+      // signal: agent goes silent. Ops sees it in [KK-W002].
       log?.warn?.(`[KK-W002] LLM error suppressed (not sent to chat): ${replyPayload.text.slice(0, 160)}`);
       return;
     }
