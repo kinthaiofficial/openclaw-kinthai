@@ -104,36 +104,59 @@ async function refreshManifest(api, agentId, log) {
   }
 }
 
-function makeHandler({ tool, agentId, getApiForAgent, ctx, log }) {
+/**
+ * Build an OpenClaw-shaped `execute(toolCallId, params, signal?, onUpdate?)` for
+ * one manifest tool entry. The runtime expects:
+ *   - property `execute` (NOT `handler`)
+ *   - signature `(toolCallId, params, signal?, onUpdate?)` — params is 2nd arg
+ *   - return `Promise<{content: [{type:"text", text}], details}>` (AgentToolResult)
+ *
+ * We wrap our internal `{ok, data, error, hint}` into the AgentToolResult shape
+ * by JSON-stringifying it as a text content. LLM sees structured JSON it can
+ * react to (success / failure / hint to self-correct).
+ */
+function makeExecute({ tool, agentId, getApiForAgent, ctx, log }) {
   const allowedPrefixes = buildAllowlist({ workspaceDir: ctx.workspaceDir });
-  return async (params) => {
+
+  // toolCallId / signal / onUpdate are part of the AgentTool contract. signal
+  // and onUpdate are reserved for future streaming + abort support; v3.0.1
+  // does not propagate them through dispatch (continuation loop is short).
+  return async (toolCallId, params /* , signal, onUpdate */) => {
     const dispatchId = randomUUID();
-    log?.info?.(`[KK-T002] dispatch tool=${tool.name} agentId=${agentId} dispatchId=${dispatchId}`);
+    log?.info?.(`[KK-T002] dispatch tool=${tool.name} agentId=${agentId} dispatchId=${dispatchId} toolCallId=${toolCallId}`);
 
     const entry = agentId ? getApiForAgent(agentId) : null;
     const api = entry?.api;
+
+    let final;
     if (!api) {
       log?.warn?.(`[KK-T030] dispatch ${tool.name} skipped — no active KinthaiApi for agentId=${agentId}`);
-      return {
+      final = {
         ok: false,
         error: 'backend_unavailable',
         hint: 'Plugin has no active KinthAI session for this agent yet.',
       };
+    } else {
+      let resp;
+      try {
+        resp = await api.dispatchTool(tool.name, params, dispatchId);
+      } catch (err) {
+        log?.error?.(`[KK-T030] dispatch ${tool.name} failed: ${err.message}`);
+        final = {
+          ok: false,
+          error: err.code || 'backend_unavailable',
+          hint: err.message,
+        };
+      }
+      if (!final) {
+        final = await runContinuationLoop(api, resp, { allowedPrefixes, log });
+      }
     }
 
-    let resp;
-    try {
-      resp = await api.dispatchTool(tool.name, params, dispatchId);
-    } catch (err) {
-      log?.error?.(`[KK-T030] dispatch ${tool.name} failed: ${err.message}`);
-      return {
-        ok: false,
-        error: err.code || 'backend_unavailable',
-        hint: err.message,
-      };
-    }
-
-    return runContinuationLoop(api, resp, { allowedPrefixes, log });
+    return {
+      content: [{ type: 'text', text: JSON.stringify(final) }],
+      details: { tool: tool.name, dispatchId, toolCallId, ok: final?.ok !== false },
+    };
   };
 }
 
@@ -174,9 +197,12 @@ export function setupDynamicRegistry(pluginApi, { getApiForAgent, getAgentId, lo
     const manifest = readCachedManifest(agentId, log);
     return manifest.tools.map((tool) => ({
       name: tool.name,
+      // `label` is required by the AgentTool TS interface; manifest doesn't
+      // ship one so we derive from name. UI / tracing will use this string.
+      label: tool.label || tool.name,
       description: tool.description,
       parameters: tool.parameters,
-      handler: makeHandler({ tool, agentId, getApiForAgent, ctx, log }),
+      execute: makeExecute({ tool, agentId, getApiForAgent, ctx, log }),
     }));
   });
 }
@@ -189,6 +215,6 @@ export const __testing = {
   refreshManifest,
   resetMemCache: () => memCache.clear(),
   getDefaultManifest,
-  makeHandler,
+  makeExecute,
   MANIFEST_FETCH_TIMEOUT_MS,
 };

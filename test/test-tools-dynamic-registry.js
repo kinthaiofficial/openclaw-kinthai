@@ -152,7 +152,7 @@ t.test('manifest_version != 1 falls back to default', async () => {
   assertEqual(tools[0].name, 'kinthai_upload_file', 'fell back to default');
 });
 
-t.test('factory: missing api still exposes tools — handler returns backend_unavailable', async () => {
+t.test('factory: missing api still exposes tools — execute returns backend_unavailable', async () => {
   __testing.resetMemCache();
   const pluginApi = makePluginApi();
   setupDynamicRegistry(pluginApi, {
@@ -162,12 +162,15 @@ t.test('factory: missing api still exposes tools — handler returns backend_una
   });
   const tools = pluginApi._getFactory()({ agentId: 'agent-no-api' });
   assert(tools.length > 0, 'tools still exposed');
-  const r = await tools[0].handler({ conversation_id: 'c', local_path: '/tmp/x' });
-  assertEqual(r.ok, false, 'handler returns failure');
-  assertEqual(r.error, 'backend_unavailable', 'reports backend_unavailable');
+  const r = await tools[0].execute('tcid-1', { conversation_id: 'c', local_path: '/tmp/x' });
+  assert(Array.isArray(r.content), 'AgentToolResult.content is array');
+  const inner = JSON.parse(r.content[0].text);
+  assertEqual(inner.ok, false, 'execute reports failure');
+  assertEqual(inner.error, 'backend_unavailable', 'reports backend_unavailable');
+  assertEqual(r.details.ok, false, 'details.ok mirrors final.ok');
 });
 
-t.test('handler invokes api.dispatchTool with dispatchId UUID', async () => {
+t.test('execute invokes api.dispatchTool with dispatchId UUID', async () => {
   __testing.resetMemCache();
   const pluginApi = makePluginApi();
   let captured = null;
@@ -195,11 +198,13 @@ t.test('handler invokes api.dispatchTool with dispatchId UUID', async () => {
   });
   await pluginApi._trigger('before_agent_start', {}, { agentId: 'agent-disp' });
   const tools = pluginApi._getFactory()({ agentId: 'agent-disp' });
-  await tools[0].handler({ foo: 'bar' });
+  const r = await tools[0].execute('tcid-disp', { foo: 'bar' });
   assert(captured, 'dispatchTool was called');
   assertEqual(captured.name, 'kinthai_terminal_test', 'tool name forwarded');
   assertEqual(captured.params.foo, 'bar', 'params forwarded');
   assert(/^[0-9a-f-]{36}$/.test(captured.dispatchId), 'dispatchId is UUID v4');
+  assert(Array.isArray(r.content), 'returns AgentToolResult.content array');
+  assertEqual(r.details.toolCallId, 'tcid-disp', 'toolCallId echoed in details');
 });
 
 t.test('cache mtime change invalidates mem cache', async () => {
@@ -242,6 +247,143 @@ t.test('cache mtime change invalidates mem cache', async () => {
 t.test('agentId with unsafe characters is sanitized into cache filename', () => {
   const p = __testing.cachePath('agent/with;weird..chars');
   assert(p.endsWith('manifest-agent_with_weird__chars.json'), `bad path: ${p}`);
+});
+
+// ── AgentTool shape regression (v3.0.1 bug-v3.0.0-tool-shape) ────────────────
+// OpenClaw runtime calls tool.execute(toolCallId, params, signal?, onUpdate?)
+// and expects {content:[{type:"text",text}], details}. Earlier v3.0.0 shipped
+// {handler:(params)=>...} which crashed with "tool.execute is not a function"
+// when an agent actually invoked the tool. These tests guard that shape.
+
+t.test('shape: factory tools have execute (not handler)', () => {
+  __testing.resetMemCache();
+  const pluginApi = makePluginApi();
+  setupDynamicRegistry(pluginApi, {
+    getApiForAgent: () => null,
+    getAgentId: () => 'agent-shape',
+    log,
+  });
+  const tools = pluginApi._getFactory()({ agentId: 'agent-shape' });
+  for (const tool of tools) {
+    assertEqual(typeof tool.execute, 'function', `tool ${tool.name} must have execute(...) function`);
+    assertEqual(typeof tool.handler, 'undefined', `tool ${tool.name} must NOT have legacy 'handler' property`);
+    assertEqual(typeof tool.name, 'string', `tool.name string`);
+    assertEqual(typeof tool.label, 'string', `tool.label string (AgentTool requires it)`);
+    assertEqual(typeof tool.description, 'string', `tool.description string`);
+    assert(tool.parameters && typeof tool.parameters === 'object', 'tool.parameters object');
+  }
+});
+
+t.test('shape: execute signature is (toolCallId, params, ...)', async () => {
+  __testing.resetMemCache();
+  const pluginApi = makePluginApi();
+  let observed = null;
+  const api = {
+    fetchToolManifest: async () => ({
+      manifest_version: 1,
+      generated_at: '2026-04-27T00:00:00Z',
+      tools: [{
+        name: 'kinthai_sig_test',
+        description: 'sig',
+        parameters: { type: 'object', properties: {}, required: [] },
+      }],
+    }),
+    dispatchTool: async (n, p, d) => { observed = { n, p, d }; return { ok: true, data: {} }; },
+    continueTool: async () => ({ ok: true }),
+    uploadFile: async () => ({ file_id: 'file-mock' }),
+  };
+  setupDynamicRegistry(pluginApi, {
+    getApiForAgent: () => ({ api }),
+    getAgentId: (ctx) => ctx?.agentId,
+    log,
+  });
+  await pluginApi._trigger('before_agent_start', {}, { agentId: 'agent-sig' });
+  const tools = pluginApi._getFactory()({ agentId: 'agent-sig' });
+
+  // Wrong: call without toolCallId → params goes to first arg position
+  // Right: (toolCallId, params)
+  await tools[0].execute('call-id-xyz', { hello: 'world' });
+  assertEqual(observed.p.hello, 'world', 'params landed in 2nd positional, not 1st');
+  // Make sure nothing broke when signal/onUpdate are omitted
+  assert(observed.n === 'kinthai_sig_test', 'tool name reached dispatch');
+});
+
+t.test('shape: execute returns AgentToolResult with content + details', async () => {
+  __testing.resetMemCache();
+  const pluginApi = makePluginApi();
+  const api = {
+    fetchToolManifest: async () => ({
+      manifest_version: 1,
+      generated_at: '2026-04-27T00:00:00Z',
+      tools: [{
+        name: 'kinthai_result_shape_test',
+        description: 'rs',
+        parameters: { type: 'object', properties: {}, required: [] },
+      }],
+    }),
+    dispatchTool: async () => ({ ok: true, data: { file_id: 'f-1', message_id: 'm-1' } }),
+    continueTool: async () => ({ ok: true }),
+    uploadFile: async () => ({ file_id: 'file-mock' }),
+  };
+  setupDynamicRegistry(pluginApi, {
+    getApiForAgent: () => ({ api }),
+    getAgentId: (ctx) => ctx?.agentId,
+    log,
+  });
+  await pluginApi._trigger('before_agent_start', {}, { agentId: 'agent-result' });
+  const tools = pluginApi._getFactory()({ agentId: 'agent-result' });
+
+  const r = await tools[0].execute('tcid', {});
+  assert(Array.isArray(r.content), 'content is array');
+  assertEqual(r.content.length, 1, 'one content block');
+  assertEqual(r.content[0].type, 'text', 'content is text');
+  assertEqual(typeof r.content[0].text, 'string', 'text is string');
+
+  // Inner should be JSON-parsable into the {ok, data, ...} shape
+  const inner = JSON.parse(r.content[0].text);
+  assertEqual(inner.ok, true, 'inner.ok preserved');
+  assertEqual(inner.data.file_id, 'f-1', 'inner.data preserved');
+
+  assert(r.details && typeof r.details === 'object', 'details present');
+  assertEqual(r.details.tool, 'kinthai_result_shape_test', 'details.tool');
+  assertEqual(r.details.toolCallId, 'tcid', 'details.toolCallId echoed');
+  assertEqual(r.details.ok, true, 'details.ok mirrors inner.ok');
+});
+
+t.test('shape: dispatch throw surfaces as AgentToolResult ok:false (not exception)', async () => {
+  __testing.resetMemCache();
+  const pluginApi = makePluginApi();
+  const api = {
+    fetchToolManifest: async () => ({
+      manifest_version: 1,
+      generated_at: '2026-04-27T00:00:00Z',
+      tools: [{
+        name: 'kinthai_throw_test',
+        description: 't',
+        parameters: { type: 'object', properties: {}, required: [] },
+      }],
+    }),
+    dispatchTool: async () => { throw new Error('connection reset'); },
+    continueTool: async () => ({ ok: true }),
+    uploadFile: async () => ({ file_id: 'file-mock' }),
+  };
+  setupDynamicRegistry(pluginApi, {
+    getApiForAgent: () => ({ api }),
+    getAgentId: (ctx) => ctx?.agentId,
+    log,
+  });
+  await pluginApi._trigger('before_agent_start', {}, { agentId: 'agent-throw' });
+  const tools = pluginApi._getFactory()({ agentId: 'agent-throw' });
+
+  // Must NOT throw — must return ok:false wrapped in AgentToolResult shape
+  let threw = false;
+  let result = null;
+  try { result = await tools[0].execute('t-throw', {}); }
+  catch { threw = true; }
+  assert(!threw, 'execute must not throw — runtime expects a Promise<AgentToolResult>');
+  const inner = JSON.parse(result.content[0].text);
+  assertEqual(inner.ok, false, 'inner.ok=false');
+  assertEqual(inner.error, 'backend_unavailable', 'maps to backend_unavailable');
 });
 
 t.test('throws if pluginApi missing required methods', () => {

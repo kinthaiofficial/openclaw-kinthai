@@ -1,5 +1,33 @@
 # Changelog
 
+## 3.0.1 (2026-04-27)
+
+### Bug Fix: dynamic factory tool shape mismatch
+
+v3.0.0 shipped factory output as `{name, description, parameters, handler}` with a `(params)` signature. OpenClaw runtime calls `tool.execute(toolCallId, params, signal?, onUpdate?)` and expects an `AgentToolResult` (`{content:[{type:"text", text}], details}`). Result: every dynamic tool crashed at invocation time with `tool.execute is not a function` and the agent fell back to `[FILE:]` markers.
+
+Fix in `src/tools/dynamic-registry.js`:
+- Property renamed `handler` → `execute`
+- Signature updated to `(toolCallId, params, signal?, onUpdate?)`
+- Internal `{ok, data, error, hint}` is now JSON-stringified into a text content block: `{content:[{type:"text", text:"..."}], details:{tool, dispatchId, toolCallId, ok}}`
+- Added `label` field (required by `@mariozechner/pi-agent-core` `AgentTool` interface) — defaults to `tool.name`
+
+`signal` and `onUpdate` are accepted but not yet propagated through dispatch — continuation loop is short-lived and v3.0.1 keeps the change minimal. Streaming/abort support tracked for a future minor.
+
+### Tests
+
+`test/test-tools-dynamic-registry.js` adds 4 shape-regression tests (now 14 total):
+- factory tools must have `execute` (function), no legacy `handler`, `label` string, parameters object
+- `execute(toolCallId, params, ...)` — params lands in 2nd positional, not 1st
+- return shape is `{content:[{type:"text",text}], details}`; inner JSON parses to `{ok, ...}`
+- `dispatchTool` throw must NOT propagate — must surface as `ok:false` AgentToolResult
+
+These tests would have caught the v3.0.0 bug. Two existing tests updated to call `execute('toolCallId', params)` instead of `handler(params)`.
+
+### Notes
+
+`tools.alsoAllow` config addition (`kinthai_upload_file`) on the gateway side is independent of this patch; once 3.0.1 is installed and `alsoAllow` is in `openclaw.json`, the LLM sees the tool and the runtime can invoke it.
+
 ## 3.0.0 (2026-04-27)
 
 ### Major Feature: Dynamic Tool Registration
