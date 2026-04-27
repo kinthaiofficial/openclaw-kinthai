@@ -200,8 +200,7 @@ function handlePostMessage(req, res, convId, body) {
 }
 
 function handleReportModel(req, res, body) {
-  // Just acknowledge
-  return jsonResponse(res, 200, { ok: true });
+  return jsonResponse(res, 200, { ok: true, received: body });
 }
 
 function handleGetRoleContext(req, res, convId) {

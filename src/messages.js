@@ -258,7 +258,7 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
       cfg: ctx.cfg,
       dispatcherOptions: {
         deliver: async (replyPayload, info) => {
-          await deliverReply(replyPayload, info, conversation_id, state);
+          await deliverReply(replyPayload, info, conversation_id, state, sessionKey);
         },
       },
     });
@@ -268,7 +268,7 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
    * Deliver AI reply to KinthAI.
    * 将 AI 回复投递到 KinthAI。
    */
-  async function deliverReply(replyPayload, info, convId, state) {
+  async function deliverReply(replyPayload, info, convId, state, sessionKey) {
     const kind = info?.kind || 'unknown';
 
     if (!replyPayload.text) return;
@@ -316,7 +316,12 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
       const modelInfo = lastModelInfo.value;
       if (modelInfo && (Date.now() - modelInfo.ts) < 30000) {
         lastModelInfo.value = null;
-        api.reportModel(sent.message_id, modelInfo.model, modelInfo.usage).catch((err) => {
+        api.reportModel(
+          sent.message_id,
+          modelInfo.model,
+          modelInfo.usage,
+          sessionKey ? { session_key: sessionKey } : null,
+        ).catch((err) => {
           log?.warn?.(`[KK-W008] Model report failed (non-fatal): ${err.message}`);
         });
       }

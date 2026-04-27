@@ -110,6 +110,33 @@ t.test('reportModel succeeds', async () => {
   assert(result.ok, 'should return ok');
 });
 
+t.test('reportModel forwards session to backend', async () => {
+  const api = new KinthaiApi('http://localhost:18900', testApiKey, console);
+  const msg = await api.sendMessage('conv-test-001', { content: 'session test' });
+
+  const result = await api.reportModel(
+    msg.message_id,
+    'gpt-4',
+    { input_tokens: 100 },
+    { session_key: 'agent:test:kinthai:direct:99' },
+  );
+
+  assert(result.ok, 'should return ok');
+  assertEqual(
+    result.received?.session?.session_key,
+    'agent:test:kinthai:direct:99',
+    'mock server should receive session.session_key in body',
+  );
+});
+
+t.test('reportModel omits session field when not provided', async () => {
+  const api = new KinthaiApi('http://localhost:18900', testApiKey, console);
+  const msg = await api.sendMessage('conv-test-001', { content: 'no session test' });
+
+  const result = await api.reportModel(msg.message_id, 'gpt-4', { input_tokens: 100 });
+  assert(result.received?.session === undefined, 'body should not contain session');
+});
+
 t.test('getConversation 404 for unknown conv', async () => {
   const api = new KinthaiApi('http://localhost:18900', testApiKey, console);
   let threw = false;

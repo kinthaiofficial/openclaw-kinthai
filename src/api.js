@@ -28,10 +28,11 @@ export class KinthaiApi {
     return this._fetch(`/api/v1/conversations/${convId}/messages`, 'POST', body);
   }
 
-  async reportModel(messageId, model, usage = null) {
+  async reportModel(messageId, model, usage = null, session = null) {
     if (!messageId) throw new Error('KK-V003: message_id required');
     const body = { model };
     if (usage) body.usage = usage;
+    if (session) body.session = session;
     return this._fetch(`/api/v1/messages/${messageId}/model`, 'PUT', body);
   }
 
