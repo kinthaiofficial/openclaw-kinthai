@@ -32,15 +32,6 @@ export function computeAlsoAllowPatch(currentConfig, pattern = KINTHAI_TOOL_PATT
   return next;
 }
 
-// Lazy import so this module can be loaded by tests that pass their own
-// writeFn — avoids pulling in openclaw/plugin-sdk/config-runtime (and its
-// transitive deps) at module load.
-// 懒加载 SDK 写入函数，让传入自己 writeFn 的测试不必触发 openclaw 子依赖加载。
-async function defaultWrite(cfg) {
-  const mod = await import('openclaw/plugin-sdk/config-runtime');
-  return mod.writeConfigFile(cfg);
-}
-
 /**
  * Surface a KK-E001 error when `channels.kinthai.email` is missing or empty.
  * email 缺失或为空时打 KK-E001 error log。
@@ -71,13 +62,26 @@ export function checkEmailConfigured(api, log) {
  * never throws; logs warn on failure so the plugin still loads.
  * 幂等地把 `kinthai_*` 加进 `tools.alsoAllow`。失败只 warn 不抛，确保插件继续加载。
  *
- * `writeFn` is injected for testing. Production code uses the SDK default.
+ * Uses `api.runtime.config.writeConfigFile` — the SDK injects this onto the
+ * api object at register time, so we don't need to ESM-import the openclaw
+ * package (which fails: OpenClaw plugin install does not create a
+ * `node_modules/openclaw` symlink in the plugin directory, and Node ESM
+ * does not fall back to NODE_PATH or npm-global like CJS does).
+ * 用 runtime 注入的 writeConfigFile，避开 ESM 模块解析——OpenClaw plugin
+ * install 不在插件目录创建 node_modules/openclaw 符号链接，ESM 又不像 CJS
+ * 会 fallback 到 NODE_PATH / npm global，dynamic import 必败。
+ *
+ * `writeFn` is injected for testing.
  */
-export async function applyAlsoAllowPatch(api, log, writeFn = defaultWrite) {
+export async function applyAlsoAllowPatch(api, log, writeFn) {
   try {
     const next = computeAlsoAllowPatch(api?.config);
     if (!next) return false; // already present
-    await writeFn(next);
+    const write = writeFn || api?.runtime?.config?.writeConfigFile;
+    if (typeof write !== 'function') {
+      throw new Error('api.runtime.config.writeConfigFile is not a function — SDK runtime not injected before registerFull');
+    }
+    await write(next);
     log?.info?.(`[KK-I031] Added "${KINTHAI_TOOL_PATTERN}" to tools.alsoAllow (first-time setup)`);
     return true;
   } catch (err) {

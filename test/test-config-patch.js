@@ -158,6 +158,46 @@ t.test('applyAlsoAllowPatch — preserves customer extras', async () => {
     'customer entries kept in original order, kinthai_* appended');
 });
 
+t.test('applyAlsoAllowPatch — falls back to api.runtime.config.writeConfigFile when no writeFn passed', async () => {
+  // Production path — SDK injects writeConfigFile onto api.runtime.config.
+  // Tests this path explicitly because v3.0.4 used a broken ESM dynamic
+  // import that silently failed in production.
+  const writes = [];
+  const log = makeLog();
+  const api = {
+    config: { tools: { alsoAllow: ['memory_search'] } },
+    runtime: {
+      config: {
+        writeConfigFile: async (cfg) => { writes.push(cfg); },
+      },
+    },
+  };
+
+  const wrote = await applyAlsoAllowPatch(api, log);
+
+  assertEqual(wrote, true, 'reports successful write');
+  assertEqual(writes.length, 1, 'runtime.config.writeConfigFile invoked');
+  assertEqual(JSON.stringify(writes[0].tools.alsoAllow),
+    JSON.stringify(['memory_search', 'kinthai_*']));
+  const infos = log.records.filter(r => r.level === 'info');
+  assertEqual(infos.length, 1);
+  assert(infos[0].args[0].includes('KK-I031'));
+});
+
+t.test('applyAlsoAllowPatch — runtime missing logs KK-W009 with explicit reason', async () => {
+  const log = makeLog();
+  const api = { config: { tools: { alsoAllow: ['memory_search'] } } }; // no runtime
+
+  const wrote = await applyAlsoAllowPatch(api, log);
+
+  assertEqual(wrote, false);
+  const warns = log.records.filter(r => r.level === 'warn');
+  assertEqual(warns.length, 1);
+  assert(warns[0].args[0].includes('KK-W009'));
+  assert(warns[0].args[0].includes('writeConfigFile'),
+    'warn message names the missing API so ops can grep for it');
+});
+
 // ── checkEmailConfigured (KK-E001 surface for missing email) ─────────────────
 
 t.test('checkEmailConfigured — valid email, no log, returns true', () => {

@@ -1,5 +1,27 @@
 # Changelog
 
+## 3.0.5 (2026-04-28)
+
+### Fix: alsoAllow auto-patch silently failed on every customer install
+
+Production reported that v3.0.3/v3.0.4's `applyAlsoAllowPatch` was hitting `KK-W009 alsoAllow patch failed: Cannot find package 'openclaw' imported from src/config-patch.js` on every customer install (3/3 OpenClaw instances tested). The `kinthai_*` glob therefore never landed in `tools.alsoAllow`, defeating the entire purpose of v3.0.3 — customers still had to manually edit their config to make plugin tools visible to the LLM.
+
+Root cause: v3.0.3 used a lazy `await import('openclaw/plugin-sdk/config-runtime')` inside `defaultWrite`, hoping ESM module resolution would find the openclaw package at runtime. It does not — OpenClaw plugin install does not create a `node_modules/openclaw` symlink in the plugin directory, and Node ESM (unlike CJS `require`) does not fall back to `NODE_PATH` or the npm-global path. The dynamic import therefore failed for every plugin install path (ClawHub / npx / manual unzip).
+
+Fix: drop the dynamic import entirely and use `api.runtime.config.writeConfigFile`, which the OpenClaw SDK already injects onto the api object before `registerFull` runs (verified in `node_modules/openclaw/dist/runtime-CHBJuunZ.js:309-310` and `core-DpZtjMWz.js:93,97` — `setRuntime?.(api.runtime)` precedes `registerFull?.(api)`). No ESM module resolution involved on the hot path.
+
+Belt-and-suspenders: if the SDK ever stops injecting `runtime.config.writeConfigFile`, the patch logs `KK-W009` with an explicit reason naming the missing API, instead of the previous opaque "Cannot find package 'openclaw'".
+
+### Tests
+
+`test/test-config-patch.js` (+2 cases, 22 total):
+- production path: `api.runtime.config.writeConfigFile` invoked when no `writeFn` is passed; KK-I031 logs
+- `runtime` missing on `api` → KK-W009 warn explicitly mentions `writeConfigFile`
+
+### Why CI didn't catch this
+
+Plugin unit tests passed mock `writeFn` directly, never exercising the real SDK injection or ESM resolution path. Per prod feedback, future v3.x should add an integration test that installs the plugin into a real OpenClaw instance, restarts, and asserts `KK-I031` (not `KK-W009`) in gateway.log.
+
 ## 3.0.4 (2026-04-28)
 
 ### Fix: missing email no longer fails silently
