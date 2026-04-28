@@ -14,6 +14,7 @@
     "skills/kinthai-files/SKILL.md",
     "skills/kinthai-markdown-ui-widget/SKILL.md",
     "src/api.js",
+    "src/config-patch.js",
     "src/connection.js",
     "src/file-sync.js",
     "src/files.js",

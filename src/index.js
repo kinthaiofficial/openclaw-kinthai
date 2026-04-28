@@ -28,6 +28,7 @@ import { kinthaiPlugin, setRuntime, agentRegistry, TOKENS_FILE_PATH, KINTHAI_URL
 import { lastModelInfo } from './messages.js';
 import { registerSingleAgent } from './register.js';
 import { setupDynamicRegistry } from './tools/dynamic-registry.js';
+import { applyAlsoAllowPatch } from './config-patch.js';
 
 // ── Role context cache for before_prompt_build ──────────────────────────────
 // conversationId → { data, timestamp }
@@ -128,6 +129,14 @@ export default defineChannelPluginEntry({
   registerFull(api) {
     const log = api.logger || console;
     const tokensFilePath = TOKENS_FILE_PATH;
+
+    // First-time setup: ensure `kinthai_*` is in tools.alsoAllow so plugin
+    // tools survive strict profiles (e.g. tools.profile=messaging). Idempotent
+    // — re-runs on every register but only writes when missing. Covers all
+    // install paths (ClawHub / npx / manual unzip) since register always runs.
+    // 首次启动写一次：把 kinthai_* 加进 tools.alsoAllow，让插件工具在严格
+    // 白名单（如 messaging profile）下也能被 LLM 看到。幂等，重启不会反复写。
+    applyAlsoAllowPatch(api, log);
 
     // Resolve email lazily from openclaw config (needed for auto-registering new agents).
     // 延迟从 openclaw 配置读取 email（注册新 agent 时需要）。

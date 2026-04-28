@@ -1,5 +1,38 @@
 # Changelog
 
+## 3.0.3 (2026-04-28)
+
+### Fix: kinthai_* tools blocked under strict tool profiles
+
+Production reported that customers self-hosting OpenClaw with `tools.profile: "messaging"` (or any other strict whitelist) had `kinthai_*` plugin tools filtered out before the LLM saw them. Ops can't ssh into every customer's machine to add `kinthai_*` to `tools.alsoAllow`, and the bundled `scripts/setup.mjs` only runs on the legacy `npx ... install` path — ClawHub installs (the main path) bypass it entirely.
+
+`src/config-patch.js` `applyAlsoAllowPatch` is now called from `registerFull(api)` on every plugin load. It idempotently adds the glob pattern `kinthai_*` to `config.tools.alsoAllow` via the SDK's `writeConfigFile`. One pattern covers every current and future `kinthai_*` tool — backend-deployed tool additions no longer require a plugin release.
+
+Properties:
+- **Idempotent** — the patch checks `cur.includes('kinthai_*')` before writing, so gateway restarts don't churn the config file.
+- **Order-preserving** — customer entries (e.g. `memory_search`, `web_search`) stay first; `kinthai_*` is appended.
+- **Best-effort** — if `writeConfigFile` rejects (e.g. read-only filesystem), the plugin still loads. Customers see a `KK-W009` warn line in `gateway.log` and can add the pattern manually.
+- **Universal install coverage** — every install path (`openclaw plugins install clawhub:...`, `npx ... install <email>`, manual unzip + `openclaw plugins install <dir>`, bundled prod image) goes through `registerFull`.
+
+Operational change: deployment SOP no longer requires manual `tools.alsoAllow` edits when new `kinthai_*` backend tools ship. Backend manifest + handler + deploy → next agent run picks them up.
+
+### New log codes
+
+- `KK-I031` — first-time `tools.alsoAllow` patch applied
+- `KK-W009` — patch failed (filesystem error, permission denied, etc.); plugin still loads
+
+### New exports (`src/config-patch.js`)
+
+- `computeAlsoAllowPatch(currentConfig, pattern?) → patchedConfig | null` — pure function returning the next config or `null` when no change is needed
+- `applyAlsoAllowPatch(api, log, writeFn?) → boolean` — orchestrates compute + write + log, never throws
+- `KINTHAI_TOOL_PATTERN` constant
+
+### Tests
+
+`test/test-config-patch.js` (13 tests):
+- `computeAlsoAllowPatch`: first-time append / idempotent / missing tools section / undefined alsoAllow / multi-entry order preservation / no input mutation / null config tolerated / pattern constant
+- `applyAlsoAllowPatch`: writes once on first start, logs `KK-I031` / skips write when pattern already present / handles empty config / `writeFn` rejection logs `KK-W009` and does not throw / preserves customer entries
+
 ## 3.0.2 (2026-04-27)
 
 ### Bug Fix: rate_limit silence — surface a notice instead of suppressing

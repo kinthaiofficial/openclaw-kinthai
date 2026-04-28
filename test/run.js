@@ -33,6 +33,8 @@ const unitSuites = [
   { name: 'api-tools', file: 'test-api-tools.js' },
   // v3.0.2 messages error classification + rate-limit notice
   { name: 'messages-error-classify', file: 'test-messages-error-classify.js' },
+  // v3.0.3 first-time tools.alsoAllow patch
+  { name: 'config-patch', file: 'test-config-patch.js' },
 ];
 
 // Integration tests: need real OpenClaw instance (run on 10.8.4.11)

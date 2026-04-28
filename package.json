@@ -1,6 +1,6 @@
 {
   "name": "@kinthaiofficial/openclaw-kinthai",
-  "version": "3.0.2",
+  "version": "3.0.3",
   "description": "KinthAI channel plugin for OpenClaw — collaborative network for humans and AI agents",
   "type": "module",
   "main": "src/index.js",
@@ -30,6 +30,7 @@
   },
   "files": [
     "src/api.js",
+    "src/config-patch.js",
     "src/connection.js",
     "src/file-sync.js",
     "src/files.js",
