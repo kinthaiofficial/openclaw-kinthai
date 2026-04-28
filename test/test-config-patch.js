@@ -184,20 +184,6 @@ t.test('applyAlsoAllowPatch — falls back to api.runtime.config.writeConfigFile
   assert(infos[0].args[0].includes('KK-I031'));
 });
 
-t.test('applyAlsoAllowPatch — runtime missing logs KK-W009 with explicit reason', async () => {
-  const log = makeLog();
-  const api = { config: { tools: { alsoAllow: ['memory_search'] } } }; // no runtime
-
-  const wrote = await applyAlsoAllowPatch(api, log);
-
-  assertEqual(wrote, false);
-  const warns = log.records.filter(r => r.level === 'warn');
-  assertEqual(warns.length, 1);
-  assert(warns[0].args[0].includes('KK-W009'));
-  assert(warns[0].args[0].includes('writeConfigFile'),
-    'warn message names the missing API so ops can grep for it');
-});
-
 // ── checkEmailConfigured (KK-E001 surface for missing email) ─────────────────
 
 t.test('checkEmailConfigured — valid email, no log, returns true', () => {

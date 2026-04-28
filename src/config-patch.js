@@ -63,8 +63,8 @@ export function checkEmailConfigured(api, log) {
  * 幂等地把 `kinthai_*` 加进 `tools.alsoAllow`。失败只 warn 不抛，确保插件继续加载。
  *
  * Uses `api.runtime.config.writeConfigFile` — the SDK injects this onto the
- * api object at register time, so we don't need to ESM-import the openclaw
- * package (which fails: OpenClaw plugin install does not create a
+ * api object before `registerFull` runs, so we don't need to ESM-import the
+ * openclaw package (which fails: OpenClaw plugin install does not create a
  * `node_modules/openclaw` symlink in the plugin directory, and Node ESM
  * does not fall back to NODE_PATH or npm-global like CJS does).
  * 用 runtime 注入的 writeConfigFile，避开 ESM 模块解析——OpenClaw plugin
@@ -77,11 +77,7 @@ export async function applyAlsoAllowPatch(api, log, writeFn) {
   try {
     const next = computeAlsoAllowPatch(api?.config);
     if (!next) return false; // already present
-    const write = writeFn || api?.runtime?.config?.writeConfigFile;
-    if (typeof write !== 'function') {
-      throw new Error('api.runtime.config.writeConfigFile is not a function — SDK runtime not injected before registerFull');
-    }
-    await write(next);
+    await (writeFn || api.runtime.config.writeConfigFile)(next);
     log?.info?.(`[KK-I031] Added "${KINTHAI_TOOL_PATTERN}" to tools.alsoAllow (first-time setup)`);
     return true;
   } catch (err) {
