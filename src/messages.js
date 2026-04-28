@@ -92,7 +92,7 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
    * @param {object}   triggerMsg  Primary trigger message
    * @param {object[]} [batchMsgs] Additional batched messages (debounce mode)
    */
-  function buildBodyForAgent(conv, members, triggerMsg, batchMsgs) {
+  function buildBodyForAgent(conv, members, triggerMsg, batchMsgs, senderName) {
     const lines = [];
     const isGroup = !conv.is_direct;
 
@@ -118,7 +118,7 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
         lines.push(`[${name}]: ${msg.content || ''}`);
       }
     } else {
-      lines.push(triggerMsg.content || '');
+      lines.push(`[${senderName}]: ${triggerMsg.content || ''}`);
     }
     return lines.join('\n');
   }
@@ -218,7 +218,7 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
     // 5. Build BodyForAgent (Plan C: natural language context + plain text)
     // 5. 构建 BodyForAgent（方案 C：自然语言上下文 + 纯文本）
     // If batched, pass batchMessages for combined context
-    const bodyForAgent = buildBodyForAgent(conv, members, triggerMsg, isBatch ? batchMessages : null);
+    const bodyForAgent = buildBodyForAgent(conv, members, triggerMsg, isBatch ? batchMessages : null, senderName);
     const rawBody = isBatch
       ? batchMessages.map(m => m.content || '').join('\n')
       : (triggerMsg.content || '');
