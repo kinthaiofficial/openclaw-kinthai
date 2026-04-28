@@ -1,5 +1,28 @@
 # Changelog
 
+## 3.0.4 (2026-04-28)
+
+### Fix: missing email no longer fails silently
+
+Production reported that when `channels.kinthai.email` was unset (e.g. cleared by an OpenClaw upgrade or wizard side-effect), the plugin loaded but never started any agent — and there was no log telling ops why. `openclaw plugins inspect kinthai` showed `status: loaded`, gateway logged `[gateway] ready (1 plugin: kinthai)`, but 102 agents stayed offline for 12 hours until backend heartbeat detection caught it.
+
+Root cause: OpenClaw's gateway runtime calls `plugin.config.isConfigured(account)` before invoking `startAccount`. When it returns false (which it does when email is missing), OpenClaw silently sets internal `lastError` and skips `startAccount` entirely — so the existing `[KK-E001]` error log inside `startAccount` was dead code in this case.
+
+`src/config-patch.js` `checkEmailConfigured` is now called from `registerFull(api)`. `registerFull` always runs at plugin load, regardless of `isConfigured`, so the error log surfaces even when OpenClaw's gating skips `startAccount`. The check rejects `undefined`, empty string, whitespace-only, and non-string values (the last guards against `email: {}` corruption seen in the production incident).
+
+Test: unset email + restart → gateway.log contains `[KK-E001] channels.kinthai.email is not set`.
+
+### New exports (`src/config-patch.js`)
+
+- `checkEmailConfigured(api, log) → boolean` — returns `true` when a non-empty string email is present, otherwise logs `KK-E001` error and returns `false`
+
+### Tests
+
+`test/test-config-patch.js` (+7 cases, 20 total):
+- valid email → no log, returns true
+- email `undefined` / empty string / whitespace-only / `channels.kinthai` missing entirely / non-string `email: {}` → all log `KK-E001` and return false
+- fix-it hint mentions both `openclaw config set` and `openclaw setup --wizard`
+
 ## 3.0.3 (2026-04-28)
 
 ### Fix: kinthai_* tools blocked under strict tool profiles

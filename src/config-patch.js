@@ -42,6 +42,31 @@ async function defaultWrite(cfg) {
 }
 
 /**
+ * Surface a KK-E001 error when `channels.kinthai.email` is missing or empty.
+ * email 缺失或为空时打 KK-E001 error log。
+ *
+ * Why this is needed: OpenClaw's gateway machinery calls
+ * `plugin.config.isConfigured(account)` before invoking `startAccount`. If
+ * the plugin returns false (which it does when email is missing), OpenClaw
+ * silently sets internal `lastError` and skips `startAccount` entirely —
+ * so the KK-E001 error log inside `startAccount` never fires. Calling this
+ * from `registerFull` (which always runs) guarantees the log surfaces.
+ * 此检查必须在 registerFull 里跑，不能在 startAccount 里——OpenClaw 在
+ * isConfigured=false 时跳过 startAccount，不打任何日志，运维只能看到
+ * "loaded but silent" 的现象，无从下手。
+ */
+export function checkEmailConfigured(api, log) {
+  const email = api?.config?.channels?.kinthai?.email;
+  if (typeof email === 'string' && email.trim()) return true;
+  log?.error?.(
+    '[KK-E001] channels.kinthai.email is not set — plugin will NOT start any agent. ' +
+    'Run `openclaw config set channels.kinthai.email <addr>` or ' +
+    '`openclaw setup --wizard` to enable.'
+  );
+  return false;
+}
+
+/**
  * Idempotently add `kinthai_*` to `config.tools.alsoAllow`. Best-effort —
  * never throws; logs warn on failure so the plugin still loads.
  * 幂等地把 `kinthai_*` 加进 `tools.alsoAllow`。失败只 warn 不抛，确保插件继续加载。

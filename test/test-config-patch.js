@@ -11,6 +11,7 @@ import { TestRunner, assert, assertEqual } from './helpers.js';
 import {
   computeAlsoAllowPatch,
   applyAlsoAllowPatch,
+  checkEmailConfigured,
   KINTHAI_TOOL_PATTERN,
 } from '../src/config-patch.js';
 
@@ -155,6 +156,69 @@ t.test('applyAlsoAllowPatch — preserves customer extras', async () => {
   assertEqual(JSON.stringify(writes[0].tools.alsoAllow),
     JSON.stringify(['foo', 'bar', 'kinthai_*']),
     'customer entries kept in original order, kinthai_* appended');
+});
+
+// ── checkEmailConfigured (KK-E001 surface for missing email) ─────────────────
+
+t.test('checkEmailConfigured — valid email, no log, returns true', () => {
+  const log = makeLog();
+  const api = { config: { channels: { kinthai: { email: 'alice@example.com' } } } };
+  const ok = checkEmailConfigured(api, log);
+  assertEqual(ok, true);
+  assertEqual(log.records.length, 0, 'no log lines emitted');
+});
+
+t.test('checkEmailConfigured — email undefined logs KK-E001 error', () => {
+  const log = makeLog();
+  const api = { config: { channels: { kinthai: {} } } };
+  const ok = checkEmailConfigured(api, log);
+  assertEqual(ok, false);
+  const errors = log.records.filter(r => r.level === 'error');
+  assertEqual(errors.length, 1, 'one error log');
+  assert(errors[0].args[0].includes('KK-E001'), 'log carries KK-E001 code');
+  assert(errors[0].args[0].includes('channels.kinthai.email is not set'),
+    'log mentions the config path');
+});
+
+t.test('checkEmailConfigured — empty string email logs KK-E001', () => {
+  const log = makeLog();
+  const api = { config: { channels: { kinthai: { email: '' } } } };
+  const ok = checkEmailConfigured(api, log);
+  assertEqual(ok, false);
+  assertEqual(log.records.filter(r => r.level === 'error').length, 1);
+});
+
+t.test('checkEmailConfigured — whitespace-only email logs KK-E001', () => {
+  const log = makeLog();
+  const api = { config: { channels: { kinthai: { email: '   ' } } } };
+  const ok = checkEmailConfigured(api, log);
+  assertEqual(ok, false);
+  assertEqual(log.records.filter(r => r.level === 'error').length, 1);
+});
+
+t.test('checkEmailConfigured — channels.kinthai missing logs KK-E001', () => {
+  const log = makeLog();
+  const api = { config: { channels: {} } };
+  const ok = checkEmailConfigured(api, log);
+  assertEqual(ok, false);
+  assertEqual(log.records.filter(r => r.level === 'error').length, 1);
+});
+
+t.test('checkEmailConfigured — non-string email (e.g. {} from corrupt config) logs KK-E001', () => {
+  const log = makeLog();
+  const api = { config: { channels: { kinthai: { email: {} } } } };
+  const ok = checkEmailConfigured(api, log);
+  assertEqual(ok, false, 'non-string email rejected');
+  assertEqual(log.records.filter(r => r.level === 'error').length, 1);
+});
+
+t.test('checkEmailConfigured — fix-it hint mentions both config commands', () => {
+  const log = makeLog();
+  const api = { config: {} };
+  checkEmailConfigured(api, log);
+  const msg = log.records[0].args[0];
+  assert(msg.includes('openclaw config set'), 'mentions config set command');
+  assert(msg.includes('openclaw setup --wizard'), 'mentions wizard fallback');
 });
 
 // ── Run ──────────────────────────────────────────────────────────────────────

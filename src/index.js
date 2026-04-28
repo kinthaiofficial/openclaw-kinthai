@@ -28,7 +28,7 @@ import { kinthaiPlugin, setRuntime, agentRegistry, TOKENS_FILE_PATH, KINTHAI_URL
 import { lastModelInfo } from './messages.js';
 import { registerSingleAgent } from './register.js';
 import { setupDynamicRegistry } from './tools/dynamic-registry.js';
-import { applyAlsoAllowPatch } from './config-patch.js';
+import { applyAlsoAllowPatch, checkEmailConfigured } from './config-patch.js';
 
 // ── Role context cache for before_prompt_build ──────────────────────────────
 // conversationId → { data, timestamp }
@@ -137,6 +137,13 @@ export default defineChannelPluginEntry({
     // 首次启动写一次：把 kinthai_* 加进 tools.alsoAllow，让插件工具在严格
     // 白名单（如 messaging profile）下也能被 LLM 看到。幂等，重启不会反复写。
     applyAlsoAllowPatch(api, log);
+
+    // Loud error when email is missing — OpenClaw's isConfigured gate
+    // silently skips startAccount, so this is the only signal in
+    // gateway.log that the channel didn't start.
+    // email 缺失时打 error log——OpenClaw 在 isConfigured=false 时静默跳过
+    // startAccount，不加这条日志运维完全看不到失败原因。
+    checkEmailConfigured(api, log);
 
     // Resolve email lazily from openclaw config (needed for auto-registering new agents).
     // 延迟从 openclaw 配置读取 email（注册新 agent 时需要）。
