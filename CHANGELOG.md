@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.0.7 (2026-04-28)
+
+### Fix: DM single-message body missing `[sender]:` prefix in `buildBodyForAgent`
+
+`buildBodyForAgent` (`src/messages.js`) wrapped group conversations and DM batched messages with a per-message `[name]:` prefix, but DM single-message path pushed bare content. For shared listing agents that serve multiple customers (kinthai marketplace mode), the only sender signal in DM was the one-shot `[DM with {peer_label}]` envelope at session start — easily masked by workspace `USER.md`/`IDENTITY.md` content if those were filled with a previous customer's name during owner's earlier development.
+
+Observed in production: user `10000414` (display_name `984437285`) chatted with shared listing agent `Sage` (sage-ai on 10.8.4.9) and was repeatedly addressed as "freddychu" — Sage's `workspace-sage-ai/USER.md` had been filled in by listing owner `freddychu@gmail.com` during agent setup on 2026-04-23, and that root file kept getting injected into system context for every subsequent customer.
+
+Fix: align DM single-message branch with batch and group paths — every message body now starts with `[{senderName}]: {content}`. `senderName` is now passed from `handleMessageEvent` into `buildBodyForAgent` as a function parameter.
+
+This is a mitigation, not a complete fix — workspace bootstrap files like `USER.md` are still loaded unconditionally and may continue to influence model behavior. Effectiveness depends on the model's relative weighting of system-context bootstrap files vs per-turn message envelopes; needs empirical verification per agent/model.
+
 ## 3.0.6 (2026-04-28)
 
 ### Fix: ClawHub install failed — archive missing `.clawhubignore`

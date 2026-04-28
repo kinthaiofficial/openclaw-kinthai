@@ -1,6 +1,7 @@
 {
   "_note": "Frozen expected list of files in the published npm tarball. Verified by scripts/check-publish-allowlist.mjs on prepublishOnly. If you intentionally add/remove a file, update this AND package.json files[].",
   "files": [
+    ".clawhubignore",
     "CHANGELOG.md",
     "LICENSE",
     "README.md",
