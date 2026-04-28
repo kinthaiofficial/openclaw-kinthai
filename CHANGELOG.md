@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.8 (2026-04-28)
+
+### Republish of v3.0.7 — ClawHub artifact rebuilt without `test/`
+
+v3.0.7 npm tarball is fine (uses `files[]` whitelist, no test/ included). v3.0.7 ClawHub artifact was built by `clawhub package publish .` directly without going through the maintainer wrapper at `docs/publish-clawhub.sh`, so `test/` was archived and OpenClaw security scan rejected the install with `Shell command execution detected (child_process)` on `test/run.js` / `test/test-install.js` / `test/test-upgrade.js`.
+
+ClawHub does not allow same-version republish (`Version 3.0.7 already exists`), so v3.0.8 is published as a no-code-change re-cut using the maintainer script that hides `test/` and `docs/` during archive build.
+
+No code changes vs 3.0.7. Anyone who installed via npm (`npx @kinthaiofficial/openclaw-kinthai@3.0.7 install`) is unaffected; ClawHub install path needs v3.0.8.
+
 ## 3.0.7 (2026-04-28)
 
 ### Fix: DM single-message body missing `[sender]:` prefix in `buildBodyForAgent`
