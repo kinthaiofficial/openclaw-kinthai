@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.0.6 (2026-04-28)
+
+### Fix: ClawHub install failed — archive missing `.clawhubignore`
+
+Production reported that `openclaw plugins install clawhub:@kinthaiofficial/openclaw-kinthai@3.0.5` failed with `ClawHub archive contents do not match files[] metadata: missing ".clawhubignore"`. This caused 92 customer agents to go offline for ~5 minutes on 10.8.4.9 before rollback to v3.0.4.
+
+Root cause: v3.0.0 rewrote `package.json` `files[]` from directory globs to explicit file paths and dropped `.clawhubignore` from the list. ClawHub's `package publish` auto-includes `.clawhubignore` in archive metadata when the file exists in the working directory, but the archive itself is built from the `files[]` whitelist — so the file was in metadata but not in the archive. ClawHub's install-time integrity check then rejects the mismatch.
+
+The entry was originally added in v2.6.0-rc.3 and removed in v2.6.0-rc.4 when the publish script (`publish-clawhub.sh`) was introduced to hide `test/` and `docs/` directories instead of relying on `.clawhubignore`. The removal was correct for the test/docs problem but created a latent mismatch that surfaced when ClawHub tightened its archive validation.
+
+Fix: add `.clawhubignore` back to `files[]`.
+
 ## 3.0.5 (2026-04-28)
 
 ### Fix: alsoAllow auto-patch silently failed on every customer install
