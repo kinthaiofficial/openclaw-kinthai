@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.10 (2026-04-29)
+
+### Fix: remove `.clawhubignore` from `files[]` to fix ClawHub install on OpenClaw ≤2026.4.11
+
+`files[]` in `package.json` listed `.clawhubignore`, but the `clawhub package publish` CLI excludes dotfiles from its zip archive. OpenClaw ≤2026.4.11 enforces strict archive/metadata consistency and rejected the install with `ClawHub archive contents do not match files[] metadata: missing ".clawhubignore"`. OpenClaw 2026.4.23 is lenient and was unaffected.
+
+Fix: remove `.clawhubignore` from `files[]` (and `scripts/publish-allowlist.json`) so the npm tarball, ClawHub archive, and metadata are all consistent.
+
+No code changes vs 3.0.9.
+
 ## 3.0.9 (2026-04-29)
 
 ### Fix: sync `openclaw.plugin.json` version to match `package.json`

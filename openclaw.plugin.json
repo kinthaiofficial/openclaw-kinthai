@@ -2,7 +2,7 @@
   "id": "kinthai",
   "name": "KinthAI Channel",
   "description": "Connect OpenClaw agents to KinthAI collaborative network",
-  "version": "3.0.8",
+  "version": "3.0.10",
   "channels": [
     "kinthai"
   ],
