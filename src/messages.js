@@ -92,7 +92,7 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
    * @param {object}   triggerMsg  Primary trigger message
    * @param {object[]} [batchMsgs] Additional batched messages (debounce mode)
    */
-  function buildBodyForAgent(conv, members, triggerMsg, batchMsgs, senderName) {
+  function buildBodyForAgent(conv, members, triggerMsg, batchMsgs, senderName, quotedMsg) {
     const lines = [];
     const isGroup = !conv.is_direct;
 
@@ -107,6 +107,17 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
     }
 
     lines.push('');
+
+    // Quoted message context — inject before the trigger message
+    if (quotedMsg) {
+      const quotedSender = members.find(m => String(m.id) === String(quotedMsg.sender_id));
+      const quotedName = quotedSender?.display_name || String(quotedMsg.sender_id);
+      const fileSuffix = (quotedMsg.files || []).length > 0
+        ? ` [+${quotedMsg.files.length} attachment(s)]`
+        : '';
+      lines.push(`[Quoted from ${quotedName}]: ${quotedMsg.content || ''}${fileSuffix}`);
+      lines.push('');
+    }
 
     // Batched mode: combine multiple messages into structured text
     // 批量模式：合并多条消息为结构化文本
@@ -199,15 +210,28 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
     const sender = members.find(m => String(m.id) === String(triggerMsg.sender_id));
     const senderName = sender?.display_name || String(triggerMsg.sender_id);
 
+    // Fetch quoted message if this is a reply — agent needs its content and attachments
+    let quotedMsg = null;
+    if (triggerMsg.reply_to_id) {
+      try {
+        quotedMsg = await api.getMessage(triggerMsg.reply_to_id);
+      } catch (err) {
+        log?.warn?.(`[KK-W010] Failed to fetch quoted message ${triggerMsg.reply_to_id}: ${err.message}`);
+      }
+    }
+
     log?.info?.(
       `[KK-I010] Context ready — type=${isGroup ? 'group' : 'dm'} ` +
-      `sender=${senderName} members=${members.length} files=${(triggerMsg.files || []).length}`,
+      `sender=${senderName} members=${members.length} files=${(triggerMsg.files || []).length}` +
+      `${quotedMsg ? ` quoted_files=${(quotedMsg.files || []).length}` : ''}`,
     );
 
     // 3. Download attachments → media paths for OpenClaw mediaUnderstanding
-    // 3. 下载附件 → 为 OpenClaw mediaUnderstanding 准备媒体路径
+    // Include quoted message attachments so agent can see images in replied-to messages
+    // 3. 下载附件 → 为 OpenClaw mediaUnderstanding 准备媒体路径（含被引用消息的附件）
+    const allFiles = [...(triggerMsg.files || []), ...(quotedMsg?.files || [])];
     const mediaResult = await fileHandler.resolveMediaForContext(
-      triggerMsg.files || [],
+      allFiles,
       conversation_id,
     );
 
@@ -218,7 +242,7 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
     // 5. Build BodyForAgent (Plan C: natural language context + plain text)
     // 5. 构建 BodyForAgent（方案 C：自然语言上下文 + 纯文本）
     // If batched, pass batchMessages for combined context
-    const bodyForAgent = buildBodyForAgent(conv, members, triggerMsg, isBatch ? batchMessages : null, senderName);
+    const bodyForAgent = buildBodyForAgent(conv, members, triggerMsg, isBatch ? batchMessages : null, senderName, quotedMsg);
     const rawBody = isBatch
       ? batchMessages.map(m => m.content || '').join('\n')
       : (triggerMsg.content || '');

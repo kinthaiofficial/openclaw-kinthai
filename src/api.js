@@ -41,6 +41,7 @@ export class KinthaiApi {
   async getConversation(convId) { return this._fetch(`/api/v1/conversations/${convId}`); }
   async getMembers(convId) { return this._fetch(`/api/v1/conversations/${convId}/members`); }
   async getMessages(convId, limit = 30) { return this._fetch(`/api/v1/conversations/${convId}/messages?limit=${limit}`); }
+  async getMessage(messageId) { return this._fetch(`/api/v1/messages/${messageId}`); }
 
   async uploadFile(buffer, fileName, convId) {
     const formData = new FormData();

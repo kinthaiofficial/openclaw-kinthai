@@ -355,6 +355,9 @@ export function createConnection(api, state, messageHandler, ctx) {
         return;
       }
 
+      // Self-message filter — ignore events the agent itself sent to prevent dispatch loops
+      if (String(event.sender_id) === String(state.selfUserId)) return;
+
       log?.info?.(
         `[KK-I007] message.new received — conv=${event.conversation_id} ` +
         `msg=${event.message_id} trigger_agent=${event.trigger_agent || false}`,
