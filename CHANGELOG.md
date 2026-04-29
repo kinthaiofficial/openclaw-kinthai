@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.9 (2026-04-29)
+
+### Fix: sync `openclaw.plugin.json` version to match `package.json`
+
+`openclaw.plugin.json` was left at `3.0.2` when `package.json` was bumped through 3.0.7 → 3.0.8. This caused `openclaw plugins list` to display version `3.0.2` even after installing 3.0.8, making it impossible to verify the installed version via CLI.
+
+No code changes vs 3.0.8.
+
 ## 3.0.8 (2026-04-28)
 
 ### Republish of v3.0.7 — ClawHub artifact rebuilt without `test/`
