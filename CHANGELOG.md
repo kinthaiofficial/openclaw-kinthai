@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.16 (2026-05-03)
+
+### Feat: auto-cache large files for agent vision (local_path injection)
+
+`kinthai_read_file` for large files now returns a `local_path` in addition to `download_url`. The plugin intercepts the result in `makeExecute`, downloads the file via `api.downloadFile` into the session files cache (`sessions/{conv_id}/files/{file_id}_*`), and injects `local_path` so the agent can pass it directly to vision/file tools without auth headers. Falls back gracefully if download fails (preserves `download_url`).
+
+**Requires kinthai backend v4.6.0-rc.56+** (read_file response includes `conversation_id`).
+
 ## 3.0.15 (2026-05-01)
 
 ### Fix: ClawHub archive — exclude *.tgz leftover tarballs
