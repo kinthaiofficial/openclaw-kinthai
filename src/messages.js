@@ -91,8 +91,9 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
    * @param {object[]} members     Member list
    * @param {object}   triggerMsg  Primary trigger message
    * @param {object[]} [batchMsgs] Additional batched messages (debounce mode)
+   * @param {object}   [cachedFiles] Local paths for downloaded attachments { paths, types }
    */
-  function buildBodyForAgent(conv, members, triggerMsg, batchMsgs, senderName, quotedMsg) {
+  function buildBodyForAgent(conv, members, triggerMsg, batchMsgs, senderName, quotedMsg, cachedFiles) {
     const lines = [];
     const isGroup = !conv.is_direct;
 
@@ -131,6 +132,18 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
     } else {
       lines.push(`[${senderName}]: ${triggerMsg.content || ''}`);
     }
+
+    // Append local file paths so the agent can pass them directly to tools
+    // 追加本地缓存路径，让 agent 可以直接把路径传给工具（如 image 分析）
+    if (cachedFiles?.paths?.length > 0) {
+      lines.push('');
+      lines.push('[Cached files]');
+      for (let i = 0; i < cachedFiles.paths.length; i++) {
+        const mime = cachedFiles.types?.[i] || 'application/octet-stream';
+        lines.push(`- ${cachedFiles.paths[i]} (${mime})`);
+      }
+    }
+
     return lines.join('\n');
   }
 
@@ -212,11 +225,11 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
 
     // Fetch quoted message if this is a reply — agent needs its content and attachments
     let quotedMsg = null;
-    if (triggerMsg.reply_to_id) {
+    if (triggerMsg.reply_to) {
       try {
-        quotedMsg = await api.getMessage(triggerMsg.reply_to_id);
+        quotedMsg = await api.getMessage(triggerMsg.reply_to);
       } catch (err) {
-        log?.warn?.(`[KK-W010] Failed to fetch quoted message ${triggerMsg.reply_to_id}: ${err.message}`);
+        log?.warn?.(`[KK-W010] Failed to fetch quoted message ${triggerMsg.reply_to}: ${err.message}`);
       }
     }
 
@@ -242,7 +255,7 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
     // 5. Build BodyForAgent (Plan C: natural language context + plain text)
     // 5. 构建 BodyForAgent（方案 C：自然语言上下文 + 纯文本）
     // If batched, pass batchMessages for combined context
-    const bodyForAgent = buildBodyForAgent(conv, members, triggerMsg, isBatch ? batchMessages : null, senderName, quotedMsg);
+    const bodyForAgent = buildBodyForAgent(conv, members, triggerMsg, isBatch ? batchMessages : null, senderName, quotedMsg, mediaResult);
     const rawBody = isBatch
       ? batchMessages.map(m => m.content || '').join('\n')
       : (triggerMsg.content || '');
@@ -288,7 +301,7 @@ export function createMessageHandler(api, fileHandler, state, ctx) {
       MediaType: mediaResult.types[0] || undefined,
       MediaTypes: mediaResult.types.length > 0 ? mediaResult.types : undefined,
       // Reply reference
-      ReplyToId: triggerMsg.reply_to_id || undefined,
+      ReplyToId: triggerMsg.reply_to || undefined,
     });
 
     // 8. Record inbound session (OpenClaw standard)
