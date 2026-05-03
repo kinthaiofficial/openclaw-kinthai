@@ -1,5 +1,43 @@
 # Changelog
 
+## 3.0.15 (2026-05-01)
+
+### Fix: ClawHub archive — exclude *.tgz leftover tarballs
+
+Previous publish runs left `*.tgz` files in the `code/` directory. These were included in the ClawHub archive but absent from npm `files[]`, causing OpenClaw ≤2026.4.11 strict metadata check to fail with "missing CHANGELOG.md" (archive contents ≠ files[] list). Added `*.tgz` to `.clawhubignore`. No code changes vs 3.0.12.
+
+## 3.0.14 (2026-05-01)
+
+### Fix: ClawHub archive — exclude all dotfiles (.gitignore .npmignore .clawhubignore .git)
+
+v3.0.13 still failed on 10.8.4.9 and 10.8.0.14 with "missing .gitignore". Added all dotfiles in the package root to `.clawhubignore`. No code changes vs 3.0.12.
+
+## 3.0.13 (2026-05-03)
+
+### Fix: ClawHub archive — exclude test/ docs/ .clawhubignore from package
+
+v3.0.12 ClawHub artifact included `test/` (child_process calls) and `.clawhubignore` itself, causing install failures on all three production servers. No code changes vs 3.0.12.
+
+Fix: updated `.clawhubignore` to also exclude `test/`, `docs/`, and `.clawhubignore` itself.
+
+## 3.0.12 (2026-05-03)
+
+### Feat: append cached file paths to agent body
+
+`buildBodyForAgent` now accepts a `cachedFiles` parameter (local paths + MIME types for downloaded attachments) and appends a `[Cached files]` block to the agent body. Agents can pass these paths directly to tools (e.g. image analysis, file read) without re-downloading from KinthAI.
+
+**Requires kinthai backend v4.6.0-rc.53+**.
+
+## 3.0.11 (2026-04-29)
+
+### Fix: reply_to field name mismatch — quoted message images now visible to agent
+
+`triggerMsg.reply_to_id` was always `undefined` because the KinthAI API returns the field as `reply_to` (not `reply_to_id`). This meant the quoted message was never fetched, so its content and image attachments were never passed to the agent.
+
+Fix: change `reply_to_id` → `reply_to` in all three locations in `src/messages.js`.
+
+**Requires kinthai backend v4.6.0-rc.38+** (which fixes the companion bug: WS dispatch `sender_id` now uses public_id format so the self-message filter in `connection.js` correctly prevents agent dispatch loops).
+
 ## 3.0.10 (2026-04-29)
 
 ### Fix: remove `.clawhubignore` from `files[]` to fix ClawHub install on OpenClaw ≤2026.4.11
