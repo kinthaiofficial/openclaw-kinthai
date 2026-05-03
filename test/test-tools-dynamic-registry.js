@@ -12,9 +12,10 @@
  * exposes tools (returns backend_unavailable when invoked).
  */
 
-import { mkdtemp, rm, writeFile, stat } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, stat, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { WORKSPACE_BASE } from '../src/storage.js';
 import { TestRunner, assert, assertEqual } from './helpers.js';
 import {
   setupDynamicRegistry,
@@ -394,6 +395,143 @@ t.test('throws if pluginApi missing required methods', () => {
     threw = err.message.includes('pluginApi');
   }
   assert(threw, 'should reject malformed pluginApi');
+});
+
+// ── T-Plugin: ensureLocalFile + local_path injection ─────────────────────────
+
+t.test('T-Plugin-1: cache hit — returns existing path, downloadFile not called', async () => {
+  const wsBase = await mkdtemp(join(tmpdir(), 'oc-tp1-'));
+  try {
+    const filesDir = join(wsBase, 'conv_tp1', 'files');
+    await mkdir(filesDir, { recursive: true });
+    await writeFile(join(filesDir, 'file_yyy_photo.jpg'), Buffer.from('fake'));
+
+    let downloadCalled = 0;
+    const api = { downloadFile: async () => { downloadCalled++; return Buffer.from(''); } };
+    const result = await __testing.ensureLocalFile(api, 'file_yyy', 'conv_tp1', 'photo.jpg', log, wsBase);
+
+    assertEqual(result, join(filesDir, 'file_yyy_photo.jpg'), 'returns cached path');
+    assertEqual(downloadCalled, 0, 'downloadFile not called on cache hit');
+  } finally {
+    await rm(wsBase, { recursive: true, force: true });
+  }
+});
+
+t.test('T-Plugin-2: cache miss — downloads, writes file, returns correct path', async () => {
+  const wsBase = await mkdtemp(join(tmpdir(), 'oc-tp2-'));
+  try {
+    const filesDir = join(wsBase, 'conv_tp2', 'files');
+    await mkdir(filesDir, { recursive: true });
+
+    let downloadCalled = 0;
+    const fakeBuffer = Buffer.from('x'.repeat(1024));
+    const api = { downloadFile: async () => { downloadCalled++; return fakeBuffer; } };
+    const result = await __testing.ensureLocalFile(api, 'file_zzz', 'conv_tp2', 'image.jpg', log, wsBase);
+
+    assertEqual(downloadCalled, 1, 'downloadFile called once');
+    assertEqual(result, join(filesDir, 'file_zzz_image.jpg'), 'returns correct local path');
+    const s = await stat(result);
+    assert(s.isFile(), 'file written to disk');
+    assertEqual(s.size, 1024, 'file size matches buffer');
+  } finally {
+    await rm(wsBase, { recursive: true, force: true });
+  }
+});
+
+t.test('T-Plugin-3: ensureLocalFile — download failure propagates as thrown error', async () => {
+  const wsBase = await mkdtemp(join(tmpdir(), 'oc-tp3-'));
+  try {
+    const api = { downloadFile: async () => { throw new Error('network reset'); } };
+    let threw = false;
+    try {
+      await __testing.ensureLocalFile(api, 'file_aaa', 'conv_tp3', 'photo.jpg', log, wsBase);
+    } catch (err) {
+      threw = true;
+      assert(err.message.includes('network reset'), 'original error propagates');
+    }
+    assert(threw, 'ensureLocalFile throws on download failure');
+  } finally {
+    await rm(wsBase, { recursive: true, force: true });
+  }
+});
+
+t.test('T-Plugin-3b: makeExecute — download fail degrades, download_url preserved, no exception', async () => {
+  __testing.resetMemCache();
+  const convId = 'conv-tp3b-' + Date.now();
+  let warnMsg = '';
+  const testLog = { info: () => {}, debug: () => {}, error: () => {}, warn: (m) => { warnMsg = m; } };
+
+  const pluginApi = makePluginApi();
+  const api = {
+    fetchToolManifest: async () => ({
+      manifest_version: 1, generated_at: '2026-05-03T00:00:00Z',
+      tools: [{ name: 'kinthai_read_file', description: 'r', parameters: { type: 'object', properties: {}, required: [] } }],
+    }),
+    dispatchTool: async () => ({
+      ok: true,
+      data: { file_id: 'file_aaa', original_name: 'photo.jpg', download_url: '/api/v1/files/file_aaa', conversation_id: convId },
+    }),
+    continueTool: async () => ({ ok: true }),
+    downloadFile: async () => { throw new Error('connection reset'); },
+  };
+  setupDynamicRegistry(pluginApi, { getApiForAgent: () => ({ api }), getAgentId: (ctx) => ctx?.agentId, log: testLog });
+  await pluginApi._trigger('before_agent_start', {}, { agentId: 'agent-tp3b' });
+  const tools = pluginApi._getFactory()({ agentId: 'agent-tp3b' });
+
+  let threw = false;
+  let r;
+  try { r = await tools[0].execute('tcid-3b', {}); } catch { threw = true; }
+
+  assert(!threw, 'execute must not throw');
+  const inner = JSON.parse(r.content[0].text);
+  assertEqual(inner.ok, true, 'result ok:true (dispatch succeeded)');
+  assert(!inner.data?.local_path, 'local_path absent after download failure');
+  assert(inner.data?.download_url, 'download_url still present for agent fallback');
+  assert(warnMsg.includes('[KK-T033]'), 'KK-T033 warn log emitted');
+  assert(warnMsg.includes('file_aaa'), 'file_id in warn log');
+
+  await rm(join(WORKSPACE_BASE, convId), { recursive: true, force: true });
+});
+
+t.test('T-Plugin-4: non-image result (no download_url) — injection skipped, result unchanged', async () => {
+  __testing.resetMemCache();
+  const pluginApi = makePluginApi();
+  const api = {
+    fetchToolManifest: async () => ({
+      manifest_version: 1, generated_at: '2026-05-03T00:00:00Z',
+      tools: [{ name: 'kinthai_read_file', description: 'r', parameters: { type: 'object', properties: {}, required: [] } }],
+    }),
+    dispatchTool: async () => ({ ok: true, data: { text: 'file contents here' } }),
+    continueTool: async () => ({ ok: true }),
+    downloadFile: async () => { throw new Error('should not be called'); },
+  };
+  setupDynamicRegistry(pluginApi, { getApiForAgent: () => ({ api }), getAgentId: (ctx) => ctx?.agentId, log });
+  await pluginApi._trigger('before_agent_start', {}, { agentId: 'agent-tp4' });
+  const tools = pluginApi._getFactory()({ agentId: 'agent-tp4' });
+  const r = await tools[0].execute('tcid-4', {});
+  const inner = JSON.parse(r.content[0].text);
+  assertEqual(inner.ok, true, 'ok:true');
+  assertEqual(inner.data.text, 'file contents here', 'text data preserved');
+  assert(!inner.data.local_path, 'no local_path injected for text result');
+});
+
+t.test('T-Plugin-5: idempotent cache — second call hits cache, downloadFile called only once', async () => {
+  const wsBase = await mkdtemp(join(tmpdir(), 'oc-tp5-'));
+  try {
+    const filesDir = join(wsBase, 'conv_tp5', 'files');
+    await mkdir(filesDir, { recursive: true });
+
+    let downloadCalled = 0;
+    const api = { downloadFile: async () => { downloadCalled++; return Buffer.from('y'.repeat(512)); } };
+
+    const p1 = await __testing.ensureLocalFile(api, 'file_zzz', 'conv_tp5', 'image.jpg', log, wsBase);
+    const p2 = await __testing.ensureLocalFile(api, 'file_zzz', 'conv_tp5', 'image.jpg', log, wsBase);
+
+    assertEqual(downloadCalled, 1, 'downloadFile called exactly once across both calls');
+    assertEqual(p1, p2, 'both calls return same path');
+  } finally {
+    await rm(wsBase, { recursive: true, force: true });
+  }
 });
 
 // ── Run ──────────────────────────────────────────────────────────────────────

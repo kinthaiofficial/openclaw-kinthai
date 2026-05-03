@@ -24,6 +24,8 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { runContinuationLoop } from './continuation.js';
 import { buildAllowlist } from './local-primitives.js';
+import { WORKSPACE_BASE } from '../storage.js';
+import { sanitizeFileName } from '../utils.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN_ROOT = path.resolve(__dirname, '..', '..');
@@ -105,6 +107,31 @@ async function refreshManifest(api, agentId, log) {
 }
 
 /**
+ * Ensure file_id is cached locally. On hit returns the existing path; on miss
+ * downloads via api.downloadFile and writes to the session files dir.
+ */
+async function ensureLocalFile(api, fileId, convId, originalName, log, workspaceBase = WORKSPACE_BASE) {
+  const filesDir = path.join(workspaceBase, convId, 'files');
+  await fsp.mkdir(filesDir, { recursive: true });
+
+  const entries = await fsp.readdir(filesDir).catch(() => []);
+  const hit = entries.find(f => f.startsWith(fileId + '_'));
+  if (hit) {
+    const p = path.join(filesDir, hit);
+    log?.debug?.(`[KK-T033] local cache hit — ${p}`);
+    return p;
+  }
+
+  log?.info?.(`[KK-T033] downloading to cache — file_id=${fileId} conv=${convId}`);
+  const buffer = await api.downloadFile(fileId);
+  const localName = `${fileId}_${sanitizeFileName(originalName)}`;
+  const localPath = path.join(filesDir, localName);
+  await fsp.writeFile(localPath, buffer);
+  log?.info?.(`[KK-T033] cached ${localName} (${buffer.length} bytes)`);
+  return localPath;
+}
+
+/**
  * Build an OpenClaw-shaped `execute(toolCallId, params, signal?, onUpdate?)` for
  * one manifest tool entry. The runtime expects:
  *   - property `execute` (NOT `handler`)
@@ -150,6 +177,37 @@ function makeExecute({ tool, agentId, getApiForAgent, ctx, log }) {
       }
       if (!final) {
         final = await runContinuationLoop(api, resp, { allowedPrefixes, log });
+      }
+    }
+
+    // Large-file result: backend returns download_url + conversation_id.
+    // Intercept before the LLM sees it — download to local cache and inject
+    // local_path so the agent can use the file directly without auth headers.
+    if (
+      api &&
+      final?.ok &&
+      final?.data?.download_url &&
+      final?.data?.file_id &&
+      final?.data?.conversation_id
+    ) {
+      try {
+        const localPath = await ensureLocalFile(
+          api,
+          final.data.file_id,
+          final.data.conversation_id,
+          final.data.original_name || final.data.file_id,
+          log,
+        );
+        final = {
+          ...final,
+          data: {
+            ...final.data,
+            local_path: localPath,
+            note: 'Image cached locally. Use local_path for vision processing.',
+          },
+        };
+      } catch (err) {
+        log?.warn?.(`[KK-T033] local cache failed — file_id=${final.data.file_id}: ${err.message}`);
       }
     }
 
@@ -216,5 +274,6 @@ export const __testing = {
   resetMemCache: () => memCache.clear(),
   getDefaultManifest,
   makeExecute,
+  ensureLocalFile,
   MANIFEST_FETCH_TIMEOUT_MS,
 };
