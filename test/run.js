@@ -35,6 +35,8 @@ const unitSuites = [
   { name: 'messages-error-classify', file: 'test-messages-error-classify.js' },
   // v3.0.3 first-time tools.alsoAllow patch
   { name: 'config-patch', file: 'test-config-patch.js' },
+  // 6.9 static tool contract (openclaw.plugin.json#contracts.tools)
+  { name: 'manifest-contract', file: 'test-manifest-contract.js' },
 ];
 
 // Integration tests: need real OpenClaw instance (run on 10.8.4.11)

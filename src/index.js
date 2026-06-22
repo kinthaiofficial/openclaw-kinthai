@@ -230,8 +230,16 @@ export default defineChannelPluginEntry({
 
     // Dynamic tool registration (v3.0.0).
     // Hook fetches manifest from backend on each agent run; factory reads
-    // the per-agent cache and exposes typed tools to the LLM. New tools
-    // ship via backend deploy; the plugin doesn't need a release.
+    // the per-agent cache and exposes typed tools to the LLM.
+    //
+    // OpenClaw 2026.6.9+ gates plugin tools behind a STATIC contract:
+    // every tool name the factory returns must be declared in
+    // openclaw.plugin.json#contracts.tools, or the runtime drops it
+    // ("plugin tool is undeclared"). A backend-side NEW tool therefore no
+    // longer ships transparently — its name must be added to contracts.tools
+    // and the plugin re-released. Missing names degrade per-tool (graceful),
+    // not catastrophically. Keep contracts.tools in sync with the backend
+    // agentToolRegistry (guarded by backend test_o EXPECTED_AGENT_TOOLS).
     setupDynamicRegistry(api, {
       getApiForAgent: (agentId) => agentRegistry.get(agentId) || null,
       // ctx.agentId is the OpenClaw agent name (= agents.openclaw_agent_id

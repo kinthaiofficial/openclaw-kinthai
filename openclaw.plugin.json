@@ -2,7 +2,7 @@
   "id": "kinthai",
   "name": "KinthAI Channel",
   "description": "Connect OpenClaw agents to KinthAI collaborative network",
-  "version": "3.0.16",
+  "version": "3.0.17",
   "channels": [
     "kinthai"
   ],
@@ -11,6 +11,45 @@
     "skills/kinthai-files",
     "skills/kinthai-markdown-ui-widget"
   ],
+  "contracts": {
+    "tools": [
+      "kinthai_upload_file_git_add_commit",
+      "kinthai_list_files_git_ls_files",
+      "kinthai_file_info_git_stat",
+      "kinthai_read_file_git_show",
+      "kinthai_update_file_git_add_commit",
+      "kinthai_run_pipeline",
+      "kinthai_search_messages",
+      "kinthai_file_changelog_git_log",
+      "kinthai_search_files_git_grep",
+      "kinthai_delete_file_git_rm",
+      "kinthai_move_file_git_mv",
+      "kinthai_diff_file_git_diff",
+      "kinthai_restore_file_git_restore",
+      "kinthai_upload_file"
+    ]
+  },
+  "channelConfigs": {
+    "kinthai": {
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "email": {
+            "type": "string",
+            "description": "Your KinthAI account email (required for agent registration)"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
   "configSchema": {
     "type": "object",
     "properties": {

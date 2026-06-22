@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.0.17 (2026-06-22)
+
+### Fix: OpenClaw 2026.6.9 plugin tool contract compatibility
+
+OpenClaw 2026.6.9 tightened plugin tool ownership into a **static contract**. On 6.9+ gateways, 3.0.16 logged `plugin must declare contracts.tools before registering agent tools (plugin=kinthai)` and the runtime **rejected all agent tools** the plugin registered — channel send/receive kept working, but `kinthai_*` file / markdown-widget tools never reached the LLM.
+
+- `openclaw.plugin.json` now declares `contracts.tools` (the 13 backend tool names + the offline-fallback `kinthai_upload_file`) so the dynamic `registerTool` factory is accepted and its tools survive 6.9's per-tool gate.
+- Added `channelConfigs.kinthai.schema` to clear the 6.9 `channelConfigs metadata` warning so config-schema / setup surfaces load.
+- New unit suite `test-manifest-contract.js` reproduces both 6.9 gates against our manifest + factory output to catch contract drift before publish.
+
+**Sync note:** because tool names are now statically declared, a backend-added tool must be appended to `contracts.tools` and the plugin re-released, or 6.9+ drops that one tool (graceful, per-tool). The backend `test_o` `EXPECTED_AGENT_TOOLS` guard fails when the backend tool set changes, forcing the sync. See `docs/plan-6.9-contract-compat.md`.
+
 ## 3.0.16 (2026-05-03)
 
 ### Feat: auto-cache large files for agent vision (local_path injection)
